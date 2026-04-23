@@ -1,206 +1,561 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orion AI</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0a0a0f; color: #ffffff; height: 100vh; display: flex; flex-direction: column; }
-        .header { background: #12121a; padding: 16px 24px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #2a2a3a; }
-        .logo { width: 40px; height: 40px; background: linear-gradient(135deg, #6c63ff, #3ecfcf); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-        .header-text h1 { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #6c63ff, #3ecfcf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .header-text p { font-size: 12px; color: #666; }
-        .status-dot { width: 8px; height: 8px; background: #3ecfcf; border-radius: 50%; margin-left: auto; animation: pulse 2s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-        .chat-area { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
-        .welcome { text-align: center; padding: 40px 20px; color: #444; }
-        .welcome h2 { font-size: 24px; margin-bottom: 8px; background: linear-gradient(135deg, #6c63ff, #3ecfcf); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .welcome p { font-size: 14px; margin-bottom: 24px; }
-        .suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .suggestion { background: #12121a; border: 1px solid #2a2a3a; color: #888; padding: 8px 16px; border-radius: 20px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
-        .suggestion:hover { border-color: #6c63ff; color: #6c63ff; }
-        .message { display: flex; gap: 10px; max-width: 80%; }
-        .message.user { align-self: flex-end; flex-direction: row-reverse; }
-        .message.ai { align-self: flex-start; }
-        .bubble { padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.5; }
-        .message.user .bubble { background: linear-gradient(135deg, #6c63ff, #5a52e0); color: white; border-bottom-right-radius: 4px; }
-        .message.ai .bubble { background: #12121a; border: 1px solid #2a2a3a; color: #ddd; border-bottom-left-radius: 4px; }
-        .action-card { background: #12121a; border: 1px solid #2a2a3a; border-radius: 16px; padding: 16px; max-width: 450px; align-self: flex-start; }
-        .card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .card-icon { width: 32px; height: 32px; background: linear-gradient(135deg, #6c63ff, #3ecfcf); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-        .card-title { font-size: 14px; font-weight: 600; color: #fff; }
-        .card-intent { font-size: 11px; color: #6c63ff; text-transform: uppercase; letter-spacing: 1px; }
-        .card-summary { font-size: 13px; color: #aaa; margin-bottom: 12px; line-height: 1.5; }
-        .card-draft { background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 8px; padding: 10px; font-size: 12px; color: #ccc; margin-bottom: 12px; line-height: 1.6; white-space: pre-wrap; }
-        .card-actions { display: flex; gap: 8px; }
-        .btn-confirm { flex: 1; padding: 10px; background: linear-gradient(135deg, #6c63ff, #3ecfcf); border: none; border-radius: 10px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; }
-        .btn-cancel { padding: 10px 16px; background: transparent; border: 1px solid #2a2a3a; border-radius: 10px; color: #666; font-size: 13px; cursor: pointer; }
-        .btn-cancel:hover { border-color: #ff4444; color: #ff4444; }
-        .loading { display: flex; gap: 4px; padding: 12px 16px; background: #12121a; border: 1px solid #2a2a3a; border-radius: 18px; border-bottom-left-radius: 4px; align-self: flex-start; }
-        .loading span { width: 8px; height: 8px; background: #6c63ff; border-radius: 50%; animation: bounce 1.2s infinite; }
-        .loading span:nth-child(2) { animation-delay: 0.2s; }
-        .loading span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes bounce { 0%, 100% { transform: translateY(0); opacity: 0.4; } 50% { transform: translateY(-6px); opacity: 1; } }
-        .input-area { padding: 16px 24px; background: #12121a; border-top: 1px solid #2a2a3a; display: flex; gap: 12px; align-items: flex-end; }
-        .input-box { flex: 1; background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 16px; padding: 12px 16px; color: #fff; font-size: 14px; resize: none; outline: none; }
-        .input-box:focus { border-color: #6c63ff; }
-        .input-box::placeholder { color: #444; }
-        .send-btn { width: 44px; height: 44px; background: linear-gradient(135deg, #6c63ff, #3ecfcf); border: none; border-radius: 12px; cursor: pointer; font-size: 18px; color: white; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orion AI</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+--bg:#0c0c0f;
+--bg2:#111116;
+--bg3:#16161d;
+--bg4:#1c1c25;
+--border:#ffffff0f;
+--border2:#ffffff18;
+--text:#e8e8f0;
+--text2:#8888a0;
+--text3:#555568;
+--accent:#4f8cff;
+--accent2:#2563eb;
+--green:#22c55e;
+--red:#ef4444;
+--amber:#f59e0b;
+--gmail:#ea4335;
+--wa:#25d366;
+--radius:12px;
+--radius2:8px;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden;font-size:14px}
+
+/* Sidebar */
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:0}
+.sidebar-header{padding:20px 20px 16px;border-bottom:1px solid var(--border)}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center}
+.logo-icon svg{width:18px;height:18px;fill:white}
+.logo-name{font-size:16px;font-weight:600;letter-spacing:-0.3px}
+.logo-version{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;margin-top:1px}
+.sidebar-section{padding:12px 12px 4px;font-size:10px;font-weight:600;letter-spacing:1.2px;color:var(--text3);text-transform:uppercase}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;margin:1px 8px;border-radius:var(--radius2);cursor:pointer;color:var(--text2);transition:all 0.15s;font-size:13.5px}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--bg4);color:var(--text)}
+.nav-item .icon{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:6px;flex-shrink:0}
+.nav-item .icon svg{width:14px;height:14px}
+.nav-item .badge{margin-left:auto;background:var(--accent);color:white;font-size:10px;font-weight:600;padding:2px 6px;border-radius:10px;font-family:'DM Mono',monospace}
+.nav-item .badge.green{background:var(--green)}
+.connected-status{display:flex;align-items:center;gap:6px;font-size:11px;padding:6px 12px;margin:1px 8px;color:var(--text3)}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot.green{background:var(--green)}
+.dot.red{background:var(--red)}
+.sidebar-footer{margin-top:auto;padding:16px;border-top:1px solid var(--border)}
+.user-row{display:flex;align-items:center;gap:10px}
+.avatar{width:32px;height:32px;border-radius:8px;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--accent);flex-shrink:0}
+.user-info .name{font-size:13px;font-weight:500}
+.user-info .email{font-size:11px;color:var(--text3)}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+/* Topbar */
+.topbar{display:flex;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);gap:12px;background:var(--bg)}
+.topbar-title{font-size:15px;font-weight:500}
+.topbar-sub{font-size:12px;color:var(--text3);margin-left:4px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.tb-btn{display:flex;align-items:center;gap:6px;padding:7px 12px;border-radius:var(--radius2);border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:12.5px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s}
+.tb-btn:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
+.tb-btn.primary{background:var(--accent);border-color:var(--accent);color:white}
+.tb-btn.primary:hover{background:var(--accent2);border-color:var(--accent2)}
+.tb-btn svg{width:13px;height:13px}
+
+/* Content */
+.content{flex:1;display:flex;overflow:hidden}
+
+/* Chat panel */
+.chat-panel{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.chat-messages{flex:1;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.chat-messages::-webkit-scrollbar{width:4px}
+.chat-messages::-webkit-scrollbar-track{background:transparent}
+.chat-messages::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* Welcome */
+.welcome-area{text-align:center;padding:48px 24px 24px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.welcome-icon{width:56px;height:56px;background:var(--accent);border-radius:16px;display:flex;align-items:center;justify-content:center}
+.welcome-icon svg{width:28px;height:28px;fill:white}
+.welcome-title{font-size:22px;font-weight:600;letter-spacing:-0.5px}
+.welcome-sub{font-size:14px;color:var(--text2);max-width:400px;line-height:1.6}
+.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:520px;margin-top:8px}
+.qa-btn{display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;text-align:left;transition:all 0.15s;color:var(--text)}
+.qa-btn:hover{background:var(--bg3);border-color:var(--border2)}
+.qa-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.qa-icon.gmail{background:#ea433520}
+.qa-icon.wa{background:#25d36620}
+.qa-icon svg{width:15px;height:15px}
+.qa-text .label{font-size:13px;font-weight:500}
+.qa-text .sub{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* Messages */
+.msg{display:flex;gap:10px;max-width:85%}
+.msg.user{align-self:flex-end;flex-direction:row-reverse}
+.msg.ai{align-self:flex-start}
+.msg-avatar{width:28px;height:28px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+.msg.ai .msg-avatar{background:var(--accent);color:white}
+.msg.user .msg-avatar{background:var(--bg3);color:var(--text2)}
+.msg-bubble{padding:10px 14px;border-radius:12px;font-size:13.5px;line-height:1.55}
+.msg.user .msg-bubble{background:var(--accent);color:white;border-bottom-right-radius:4px}
+.msg.ai .msg-bubble{background:var(--bg2);border:1px solid var(--border);color:var(--text);border-bottom-left-radius:4px}
+
+/* Action Card */
+.action-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:0;max-width:480px;align-self:flex-start;overflow:hidden}
+.card-top{padding:14px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border)}
+.card-service-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card-service-icon.gmail{background:#ea433515;border:1px solid #ea433530}
+.card-service-icon.wa{background:#25d36615;border:1px solid #25d36630}
+.card-service-icon svg{width:18px;height:18px}
+.card-meta .intent-tag{font-size:10px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:var(--text3);font-family:'DM Mono',monospace}
+.card-meta .card-title{font-size:14px;font-weight:500;margin-top:1px}
+.card-status{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;padding:4px 8px;border-radius:6px;background:var(--bg3);color:var(--text3)}
+.card-status .dot{width:5px;height:5px}
+.card-body{padding:14px 16px}
+.card-summary{font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:14px}
+
+/* Email draft preview */
+.draft-box{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:14px}
+.draft-header{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:4px}
+.draft-field{display:flex;align-items:center;gap:8px;font-size:12px}
+.draft-field .lbl{color:var(--text3);min-width:40px;font-family:'DM Mono',monospace;font-size:11px}
+.draft-field .val{color:var(--text2)}
+.draft-body{padding:12px 14px;font-size:13px;color:var(--text2);line-height:1.6;max-height:120px;overflow-y:auto}
+.draft-body::-webkit-scrollbar{width:3px}
+.draft-body::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* Editable draft */
+.draft-edit{padding:12px 14px;font-size:13px;color:var(--text);line-height:1.6;background:transparent;border:none;outline:none;width:100%;min-height:100px;resize:none;font-family:'DM Sans',sans-serif}
+.draft-edit:focus{background:var(--bg4)}
+
+/* Card actions */
+.card-actions{display:flex;gap:8px}
+.ca-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 14px;border-radius:var(--radius2);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.15s;border:1px solid transparent;font-family:'DM Sans',sans-serif}
+.ca-btn.confirm{background:var(--accent);color:white;border-color:var(--accent)}
+.ca-btn.confirm:hover{background:var(--accent2)}
+.ca-btn.edit{background:var(--bg3);color:var(--text2);border-color:var(--border2)}
+.ca-btn.edit:hover{background:var(--bg4);color:var(--text)}
+.ca-btn.cancel{background:transparent;color:var(--text3);border-color:var(--border)}
+.ca-btn.cancel:hover{color:var(--red);border-color:var(--red)}
+.ca-btn svg{width:13px;height:13px}
+.card-result{padding:10px 14px;border-top:1px solid var(--border);font-size:12.5px;display:flex;align-items:center;gap:8px}
+.card-result.success{color:var(--green)}
+.card-result.error{color:var(--red)}
+
+/* Loading */
+.typing{display:flex;align-items:center;gap:5px;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;border-bottom-left-radius:4px;align-self:flex-start}
+.typing span{width:7px;height:7px;background:var(--text3);border-radius:50%;animation:typing 1.2s infinite}
+.typing span:nth-child(2){animation-delay:0.2s}
+.typing span:nth-child(3){animation-delay:0.4s}
+@keyframes typing{0%,100%{transform:translateY(0);opacity:0.4}50%{transform:translateY(-4px);opacity:1}}
+
+/* Input area */
+.input-area{padding:16px 24px;border-top:1px solid var(--border);background:var(--bg)}
+.input-row{display:flex;align-items:flex-end;gap:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 14px;transition:border-color 0.15s}
+.input-row:focus-within{border-color:var(--accent)}
+.input-box{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;resize:none;font-family:'DM Sans',sans-serif;max-height:120px;min-height:20px;line-height:1.5}
+.input-box::placeholder{color:var(--text3)}
+.input-actions{display:flex;align-items:center;gap:6px}
+.ia-btn{width:32px;height:32px;border-radius:8px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);transition:all 0.15s}
+.ia-btn:hover{background:var(--bg3);color:var(--text2)}
+.ia-btn.send{background:var(--accent);color:white}
+.ia-btn.send:hover{background:var(--accent2)}
+.ia-btn svg{width:16px;height:16px}
+.input-hint{font-size:11px;color:var(--text3);margin-top:8px;text-align:center}
+
+/* Right panel */
+.right-panel{width:300px;border-left:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow:hidden}
+.rp-header{padding:16px 16px 12px;border-bottom:1px solid var(--border);font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px}
+.rp-header svg{width:14px;height:14px;color:var(--text3)}
+.rp-content{flex:1;overflow-y:auto;padding:12px}
+.rp-content::-webkit-scrollbar{width:3px}
+.rp-content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+.email-item{padding:12px;border-radius:var(--radius2);border:1px solid var(--border);background:var(--bg3);margin-bottom:8px;cursor:pointer;transition:all 0.15s}
+.email-item:hover{border-color:var(--border2);background:var(--bg4)}
+.email-item.unread{border-left:3px solid var(--accent)}
+.email-from{font-size:12.5px;font-weight:500;margin-bottom:3px;display:flex;align-items:center;justify-content:space-between}
+.email-from .time{font-size:10px;color:var(--text3);font-family:'DM Mono',monospace;font-weight:400}
+.email-subject{font-size:12px;color:var(--text2);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.email-preview{font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.wa-item{padding:12px;border-radius:var(--radius2);border:1px solid var(--border);background:var(--bg3);margin-bottom:8px;cursor:pointer;transition:all 0.15s}
+.wa-item:hover{border-color:var(--border2);background:var(--bg4)}
+.wa-item.unread{border-left:3px solid var(--wa)}
+.wa-from{font-size:12.5px;font-weight:500;margin-bottom:3px;display:flex;align-items:center;justify-content:space-between}
+.wa-msg{font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.section-label{font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin:12px 0 6px;padding:0 2px}
+.rp-refresh{width:100%;padding:8px;border-radius:var(--radius2);border:1px solid var(--border);background:transparent;color:var(--text3);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all 0.15s;margin-top:4px;display:flex;align-items:center;justify-content:center;gap:6px}
+.rp-refresh:hover{background:var(--bg3);color:var(--text2)}
+.rp-refresh svg{width:12px;height:12px}
+</style>
 </head>
 <body>
-<div class="header">
-    <div class="logo">⚡</div>
-    <div class="header-text"><h1>Orion AI</h1><p>AI Execution System</p></div>
-    <div class="status-dot"></div>
-</div>
-<div class="chat-area" id="chatArea">
-    <div class="welcome" id="welcome">
-        <h2>Selamat datang di Orion AI ⚡</h2>
-        <p>Ketik perintah apa saja, saya akan memahami dan mengeksekusinya</p>
-        <div class="suggestions">
-            <div class="suggestion" onclick="sendSuggestion(this)">📧 Balas email klien</div>
-            <div class="suggestion" onclick="sendSuggestion(this)">💬 Buat jawaban WhatsApp</div>
-            <div class="suggestion" onclick="sendSuggestion(this)">📅 Buat meeting besok</div>
-            <div class="suggestion" onclick="sendSuggestion(this)">📝 Buat laporan hari ini</div>
-        </div>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </div>
+      <div>
+        <div class="logo-name">Orion AI</div>
+        <div class="logo-version">v1.0 · MVP</div>
+      </div>
     </div>
+  </div>
+
+  <div class="sidebar-section">Workspace</div>
+  <div class="nav-item active" onclick="switchTab('chat')">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    AI Command Center
+    <div class="badge">Live</div>
+  </div>
+  <div class="nav-item" onclick="switchTab('gmail')">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#ea4335" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+    </div>
+    Gmail
+    <div class="badge" id="gmail-badge">3</div>
+  </div>
+  <div class="nav-item" onclick="switchTab('whatsapp')">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.928 1.898C6.39 1.898 1.898 6.39 1.898 11.928c0 1.88.523 3.637 1.432 5.132L1.898 22.1l5.207-1.364a10.035 10.035 0 0 0 4.823 1.23c5.538 0 10.03-4.492 10.03-10.03s-4.492-10.038-10.03-10.038z"/></svg>
+    </div>
+    WhatsApp Business
+    <div class="badge green" id="wa-badge">2</div>
+  </div>
+
+  <div class="sidebar-section" style="margin-top:8px">Connections</div>
+  <div class="connected-status">
+    <div class="dot green"></div>
+    Gmail terhubung
+  </div>
+  <div class="connected-status">
+    <div class="dot green"></div>
+    WhatsApp Business
+  </div>
+  <div class="connected-status">
+    <div class="dot green"></div>
+    Groq AI · llama-3.3
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="user-row">
+      <div class="avatar">AF</div>
+      <div class="user-info">
+        <div class="name">Azvicky Fadzry</div>
+        <div class="email">azvickyfadzry02@gmail.com</div>
+      </div>
+    </div>
+  </div>
 </div>
-<div class="input-area">
-    <textarea class="input-box" id="inputBox" placeholder="Ketik perintah... (contoh: balas email dari klien)" rows="1" onkeydown="handleKey(event)"></textarea>
-    <button class="send-btn" onclick="sendMessage()">➤</button>
+
+<div class="main">
+  <div class="topbar">
+    <div>
+      <span class="topbar-title" id="topbar-title">AI Command Center</span>
+      <span class="topbar-sub" id="topbar-sub">Ketik perintah apa saja</span>
+    </div>
+    <div class="topbar-right">
+      <button class="tb-btn" onclick="refreshEmails()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.23-2.37"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="chat-panel">
+      <div class="chat-messages" id="chatMessages">
+        <div class="welcome-area" id="welcomeArea">
+          <div class="welcome-icon">
+            <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div class="welcome-title">Selamat datang di Orion AI</div>
+          <div class="welcome-sub">Ketik perintah dalam bahasa Indonesia. Saya akan memahami, membuat draft, dan menjalankan aksi untuk Anda.</div>
+          <div class="quick-actions">
+            <button class="qa-btn" onclick="sendQuick('Tampilkan dan balas email terbaru dari klien')">
+              <div class="qa-icon gmail">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#ea4335" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              </div>
+              <div class="qa-text">
+                <div class="label">Balas Email</div>
+                <div class="sub">Baca & balas otomatis</div>
+              </div>
+            </button>
+            <button class="qa-btn" onclick="sendQuick('Buatkan jawaban WhatsApp untuk pesan masuk terbaru')">
+              <div class="qa-icon wa">
+                <svg viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg>
+              </div>
+              <div class="qa-text">
+                <div class="label">Balas WhatsApp</div>
+                <div class="sub">Draft pesan otomatis</div>
+              </div>
+            </button>
+            <button class="qa-btn" onclick="sendQuick('Kirim email penawaran ke klien baru')">
+              <div class="qa-icon gmail">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#ea4335" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </div>
+              <div class="qa-text">
+                <div class="label">Kirim Email</div>
+                <div class="sub">Buat & kirim pesan</div>
+              </div>
+            </button>
+            <button class="qa-btn" onclick="sendQuick('Broadcast pesan WhatsApp ke semua pelanggan')">
+              <div class="qa-icon wa">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </div>
+              <div class="qa-text">
+                <div class="label">Broadcast WA</div>
+                <div class="sub">Pesan massal</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-row">
+          <textarea class="input-box" id="inputBox" placeholder="Ketik perintah... contoh: balas email dari klien tadi" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <div class="input-actions">
+            <button class="ia-btn send" onclick="sendMessage()" title="Kirim">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="input-hint">Enter untuk kirim · Shift+Enter untuk baris baru</div>
+      </div>
+    </div>
+
+    <div class="right-panel">
+      <div class="rp-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+        Inbox Overview
+      </div>
+      <div class="rp-content" id="rpContent">
+        <div class="section-label">Gmail</div>
+        <div class="email-item unread" onclick="sendQuick('Balas email dari Permata Agro Group tentang supplier')">
+          <div class="email-from">Permata Agro Group <span class="time">10:32</span></div>
+          <div class="email-subject">Pencarian Supplier Baru</div>
+          <div class="email-preview">Hi Vendor! Saat ini kami sedang mencari supplier...</div>
+        </div>
+        <div class="email-item unread" onclick="sendQuick('Balas email dari LinkedIn tentang koneksi')">
+          <div class="email-from">LinkedIn <span class="time">09:15</span></div>
+          <div class="email-subject">Sonnia Kristin membagikan...</div>
+          <div class="email-preview">Hi Vendor! Sonnia Kristin dan lainnya...</div>
+        </div>
+        <div class="email-item" onclick="sendQuick('Balas email dari Stockbit tentang saham')">
+          <div class="email-from">Stockbit Snips <span class="time">08:00</span></div>
+          <div class="email-subject">BEI Revisi Kriteria IDX30</div>
+          <div class="email-preview">IHSG turun -0.24%, DKFT: Proyeksi Laba...</div>
+        </div>
+
+        <div class="section-label" style="margin-top:16px">WhatsApp Business</div>
+        <div class="wa-item unread" onclick="sendQuick('Buatkan balasan WhatsApp untuk pesan dari klien tentang order')">
+          <div class="wa-from">+62 812-3456-7890 <span class="time" style="font-size:10px;color:var(--text3);font-family:DM Mono,monospace;font-weight:400">11:20</span></div>
+          <div class="wa-msg">Halo, saya mau tanya soal order kemarin...</div>
+        </div>
+        <div class="wa-item unread" onclick="sendQuick('Buatkan balasan WhatsApp tentang pertanyaan harga produk')">
+          <div class="wa-from">+62 856-7890-1234 <span class="time" style="font-size:10px;color:var(--text3);font-family:DM Mono,monospace;font-weight:400">10:05</span></div>
+          <div class="wa-msg">Mas, harganya berapa untuk 100 pcs?</div>
+        </div>
+
+        <button class="rp-refresh" onclick="refreshEmails()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.23-2.37"/></svg>
+          Refresh Inbox
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
+
 <script>
-    const chatArea = document.getElementById('chatArea');
-    const inputBox = document.getElementById('inputBox');
+const API = 'http://127.0.0.1:8000';
+const chatEl = document.getElementById('chatMessages');
+const inputEl = document.getElementById('inputBox');
 
-    function getCardIcon(intent) {
-        if (!intent) return '⚡';
-        if (intent.includes('email')) return '📧';
-        if (intent.includes('whatsapp')) return '💬';
-        if (intent.includes('meeting')) return '📅';
-        if (intent.includes('laporan')) return '📝';
-        return '⚡';
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px'}
+
+function removeWelcome(){const w=document.getElementById('welcomeArea');if(w)w.remove()}
+
+function addMsg(text,type){
+  removeWelcome();
+  const d=document.createElement('div');
+  d.className='msg '+type;
+  const avatar=type==='ai'?'⚡':'AF';
+  d.innerHTML=`<div class="msg-avatar">${avatar}</div><div class="msg-bubble">${text}</div>`;
+  chatEl.appendChild(d);
+  chatEl.scrollTop=chatEl.scrollHeight;
+}
+
+function addTyping(){
+  removeWelcome();
+  const d=document.createElement('div');
+  d.id='typing';
+  d.className='typing';
+  d.innerHTML='<span></span><span></span><span></span>';
+  chatEl.appendChild(d);
+  chatEl.scrollTop=chatEl.scrollHeight;
+}
+
+function removeTyping(){const t=document.getElementById('typing');if(t)t.remove()}
+
+function getServiceIcon(intent){
+  if(!intent)return'ai';
+  if(intent.includes('email')||intent.includes('gmail'))return'gmail';
+  if(intent.includes('whatsapp')||intent.includes('wa'))return'wa';
+  return'ai';
+}
+
+function addActionCard(data){
+  let parsed;
+  try{
+    const clean=data.response.replace(/```json|```/g,'').trim();
+    parsed=JSON.parse(clean);
+  }catch(e){addMsg(data.response,'ai');return;}
+
+  const svc=getServiceIcon(parsed.intent);
+  const svcLabel=svc==='gmail'?'Gmail':svc==='wa'?'WhatsApp Business':'Orion AI';
+  const svcColor=svc==='gmail'?'#ea4335':svc==='wa'?'#25d366':'#4f8cff';
+  const iconSvg=svc==='gmail'
+    ?`<svg viewBox="0 0 24 24" fill="none" stroke="#ea4335" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`
+    :svc==='wa'
+    ?`<svg viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.928 1.898C6.39 1.898 1.898 6.39 1.898 11.928c0 1.88.523 3.637 1.432 5.132L1.898 22.1l5.207-1.364a10.035 10.035 0 0 0 4.823 1.23c5.538 0 10.03-4.492 10.03-10.03s-4.492-10.038-10.03-10.038z"/></svg>`
+    :`<svg viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
+
+  const draftHTML=parsed.draft?`
+    <div class="draft-box">
+      <div class="draft-header">
+        ${parsed.reply_to?`<div class="draft-field"><span class="lbl">Kepada</span><span class="val">${parsed.reply_to}</span></div>`:''}
+        ${parsed.subject?`<div class="draft-field"><span class="lbl">Subjek</span><span class="val">${parsed.subject}</span></div>`:''}
+      </div>
+      <textarea class="draft-edit" id="draft-${Date.now()}">${parsed.draft}</textarea>
+    </div>`:'';
+
+  const cardId='card-'+Date.now();
+  const card=document.createElement('div');
+  card.className='action-card';
+  card.id=cardId;
+  card.innerHTML=`
+    <div class="card-top">
+      <div class="card-service-icon ${svc}">${iconSvg}</div>
+      <div class="card-meta">
+        <div class="intent-tag">${parsed.intent||'aksi'}</div>
+        <div class="card-title">Konfirmasi Aksi · ${svcLabel}</div>
+      </div>
+      <div class="card-status"><div class="dot" style="background:var(--amber)"></div>Menunggu</div>
+    </div>
+    <div class="card-body">
+      <div class="card-summary">${parsed.summary||parsed.action}</div>
+      ${draftHTML}
+      <div class="card-actions">
+        <button class="ca-btn confirm" onclick="confirmCard('${cardId}',${JSON.stringify(parsed).replace(/"/g,'&quot;')})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Kirim Sekarang
+        </button>
+        <button class="ca-btn edit" onclick="editCard('${cardId}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Edit Draft
+        </button>
+        <button class="ca-btn cancel" onclick="cancelCard('${cardId}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Batal
+        </button>
+      </div>
+    </div>`;
+  chatEl.appendChild(card);
+  chatEl.scrollTop=chatEl.scrollHeight;
+}
+
+async function confirmCard(cardId,parsed){
+  if(typeof parsed==='string')parsed=JSON.parse(parsed.replace(/&quot;/g,'"'));
+  const card=document.getElementById(cardId);
+  const actions=card.querySelector('.card-actions');
+  const status=card.querySelector('.card-status');
+  const draftEl=card.querySelector('.draft-edit');
+  const draftText=draftEl?draftEl.value:parsed.draft;
+
+  actions.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">Sedang mengirim...</div>';
+  status.innerHTML='<div class="dot" style="background:var(--amber)"></div>Memproses';
+
+  try{
+    if(parsed.reply_to&&draftText){
+      const r=await fetch(API+'/chat/send-email',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({to:parsed.reply_to,subject:parsed.subject||'Re: ',body:draftText})
+      });
+      const result=await r.json();
+      status.innerHTML='<div class="dot" style="background:var(--green)"></div>Terkirim';
+      const resultEl=document.createElement('div');
+      resultEl.className='card-result success';
+      resultEl.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg> Email berhasil dikirim ke '+parsed.reply_to;
+      card.appendChild(resultEl);
+      actions.innerHTML='<div style="font-size:12px;color:var(--green);padding:4px 0;font-weight:500">✓ Aksi selesai</div>';
+    } else {
+      status.innerHTML='<div class="dot" style="background:var(--green)"></div>Selesai';
+      actions.innerHTML='<div style="font-size:12px;color:var(--green);padding:4px 0;font-weight:500">✓ Dikonfirmasi</div>';
     }
+  }catch(e){
+    status.innerHTML='<div class="dot" style="background:var(--red)"></div>Gagal';
+    actions.innerHTML='<div style="font-size:12px;color:var(--red);padding:4px 0">✗ Gagal terhubung ke server</div>';
+  }
+}
 
-    function addMessage(text, type) {
-        const welcome = document.getElementById('welcome');
-        if (welcome) welcome.remove();
-        const div = document.createElement('div');
-        div.className = `message ${type}`;
-        div.innerHTML = `<div class="bubble">${text}</div>`;
-        chatArea.appendChild(div);
-        chatArea.scrollTop = chatArea.scrollHeight;
-    }
+function editCard(cardId){
+  const card=document.getElementById(cardId);
+  const draftEl=card.querySelector('.draft-edit');
+  if(draftEl){draftEl.focus();draftEl.style.background='var(--bg4)';}
+  addMsg('Silakan edit draft di atas, lalu klik "Kirim Sekarang".','ai');
+}
 
-    function addLoading() {
-        const div = document.createElement('div');
-        div.id = 'loading';
-        div.className = 'loading';
-        div.innerHTML = '<span></span><span></span><span></span>';
-        chatArea.appendChild(div);
-        chatArea.scrollTop = chatArea.scrollHeight;
-    }
+function cancelCard(cardId){
+  const card=document.getElementById(cardId);
+  const actions=card.querySelector('.card-actions');
+  const status=card.querySelector('.card-status');
+  status.innerHTML='<div class="dot" style="background:var(--red)"></div>Dibatalkan';
+  actions.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">Aksi dibatalkan</div>';
+}
 
-    function removeLoading() {
-        const el = document.getElementById('loading');
-        if (el) el.remove();
-    }
+async function sendMessage(){
+  const text=inputEl.value.trim();
+  if(!text)return;
+  addMsg(text,'user');
+  inputEl.value='';
+  inputEl.style.height='auto';
+  addTyping();
+  try{
+    const r=await fetch(API+'/chat/',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:text})
+    });
+    const data=await r.json();
+    removeTyping();
+    addActionCard(data);
+  }catch(e){
+    removeTyping();
+    addMsg('Gagal terhubung ke server. Pastikan server berjalan di '+API,'ai');
+  }
+}
 
-    function addActionCard(data) {
-        let parsed;
-        try {
-            const clean = data.response.replace(/```json|```/g, '').trim();
-            parsed = JSON.parse(clean);
-        } catch(e) {
-            addMessage(data.response, 'ai');
-            return;
-        }
+function sendQuick(text){inputEl.value=text;sendMessage();}
 
-        const cardDataStr = JSON.stringify(parsed).replace(/"/g, '&quot;');
-        const draftHTML = parsed.draft ? `<div class="card-draft">${parsed.draft}</div>` : '';
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}}
 
-        const card = document.createElement('div');
-        card.className = 'action-card';
-        card.innerHTML = `
-            <div class="card-header">
-                <div class="card-icon">${getCardIcon(parsed.intent)}</div>
-                <div>
-                    <div class="card-intent">${parsed.intent || 'aksi'}</div>
-                    <div class="card-title">Konfirmasi Aksi</div>
-                </div>
-            </div>
-            <div class="card-summary">${parsed.summary || parsed.action}</div>
-            ${draftHTML}
-            <div class="card-actions">
-                <button class="btn-confirm" onclick="confirmAction(this, '${parsed.intent}', '${cardDataStr}')">✓ Jalankan</button>
-                <button class="btn-cancel" onclick="cancelAction(this)">✕ Batal</button>
-            </div>
-        `;
-        chatArea.appendChild(card);
-        chatArea.scrollTop = chatArea.scrollHeight;
-    }
+function refreshEmails(){addMsg('Sedang memuat ulang inbox...','ai');}
 
-    async function confirmAction(btn, intent, cardData) {
-        const card = btn.parentElement.parentElement;
-        card.querySelector('.card-summary').textContent = '⏳ Sedang memproses...';
-        btn.parentElement.innerHTML = '<span style="color:#3ecfcf;font-size:13px">⏳ Memproses...</span>';
-
-        if (intent === 'balas_email' && cardData) {
-            try {
-                const data = JSON.parse(cardData.replace(/&quot;/g, '"'));
-                if (data.reply_to && data.draft) {
-                    const res = await fetch('http://127.0.0.1:8000/chat/send-email', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ to: data.reply_to, subject: data.subject || 'Re: ', body: data.draft })
-                    });
-                    card.querySelector('.card-summary').textContent = '✅ Email berhasil dikirim!';
-                    btn.parentElement.innerHTML = '<span style="color:#3ecfcf;font-size:13px">✓ Terkirim!</span>';
-                    return;
-                }
-            } catch(e) { console.log(e); }
-        }
-
-        card.querySelector('.card-summary').textContent = '✅ Aksi sedang dijalankan...';
-        btn.parentElement.innerHTML = '<span style="color:#3ecfcf;font-size:13px">✓ Dikonfirmasi</span>';
-    }
-
-    function cancelAction(btn) {
-        btn.parentElement.parentElement.querySelector('.card-summary').textContent = '❌ Aksi dibatalkan';
-        btn.parentElement.innerHTML = '<span style="color:#ff4444;font-size:13px">✕ Dibatalkan</span>';
-    }
-
-    async function sendMessage() {
-        const text = inputBox.value.trim();
-        if (!text) return;
-        addMessage(text, 'user');
-        inputBox.value = '';
-        addLoading();
-        try {
-            const res = await fetch('http://127.0.0.1:8000/chat/', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ message: text })
-            });
-            const data = await res.json();
-            removeLoading();
-            addActionCard(data);
-        } catch(e) {
-            removeLoading();
-            addMessage('❌ Gagal terhubung ke server.', 'ai');
-        }
-    }
-
-    function sendSuggestion(el) {
-        inputBox.value = el.textContent.replace(/^[^\w]+/, '').trim();
-        sendMessage();
-    }
-
-    function handleKey(e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    }
+function switchTab(tab){
+  document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
 </script>
 </body>
 </html>
