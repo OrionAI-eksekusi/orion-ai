@@ -6,11 +6,9 @@ from app.services.gmail_service import get_recent_emails, send_email
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
 async def process_command(message: str):
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     
-    # Cek apakah perintah berkaitan dengan email
     email_keywords = ['email', 'balas', 'inbox', 'pesan masuk', 'surat']
     is_email_command = any(word in message.lower() for word in email_keywords)
     
@@ -20,10 +18,7 @@ async def process_command(message: str):
     if is_email_command:
         try:
             emails = get_recent_emails(max_results=3)
-            email_context = f"""
-Email terbaru di inbox:
-{json.dumps(emails, indent=2)}
-"""
+            email_context = f"Email terbaru di inbox: {json.dumps(emails, indent=2)}"
         except Exception as e:
             email_context = "Gagal membaca email."
     
@@ -32,20 +27,16 @@ Email terbaru di inbox:
         messages=[
             {
                 "role": "system",
-                "content": f"""Kamu adalah Orion AI, asisten eksekusi perintah.
-                
-{email_context}
-
-Tugasmu adalah memahami perintah pengguna dan menentukan aksi yang harus dilakukan.
-Selalu jawab dalam format JSON seperti ini:
+                "content": f"""Kamu adalah Orion AI, asisten eksekusi perintah. {email_context}
+Selalu jawab dalam format JSON:
 {{
     "intent": "nama_aksi",
     "summary": "ringkasan aksi dalam bahasa Indonesia",
     "action": "detail teknis aksi",
     "needs_confirmation": true,
-    "draft": "jika intent adalah balas_email, isi dengan draft balasan email yang siap dikirim",
-    "reply_to": "jika intent adalah balas_email, isi dengan alamat email pengirim",
-    "subject": "jika intent adalah balas_email, isi dengan subject email"
+    "draft": "draft balasan email jika intent balas_email",
+    "reply_to": "email pengirim jika intent balas_email",
+    "subject": "subject email jika intent balas_email"
 }}"""
             },
             {
@@ -57,11 +48,9 @@ Selalu jawab dalam format JSON seperti ini:
     
     ai_response = response.choices[0].message.content
     
-    # Parse response untuk cek apakah perlu kirim email
     try:
         clean = ai_response.replace('```json', '').replace('```', '').strip()
         parsed = json.loads(clean)
-        
         return {
             "status": "success",
             "message": message,
@@ -71,7 +60,7 @@ Selalu jawab dalam format JSON seperti ini:
         }
     except:
         return {
-            "status": "success", 
+            "status": "success",
             "message": message,
             "response": ai_response,
             "emails": emails
