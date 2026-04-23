@@ -42,6 +42,22 @@ async def send_whatsapp_endpoint(request: SendWhatsAppRequest):
 async def whatsapp_webhook(request: Request):
     data = await request.json()
     incoming = receive_whatsapp_message(data)
+    
+    if not incoming["message"] or not incoming["phone"]:
+        return {"status": "ok"}
+    
     ai_result = await process_command(incoming["message"])
-    send_whatsapp(incoming["phone"], ai_result["response"])
+    
+    reply_text = ""
+    try:
+        parsed = ai_result.get("parsed", {})
+        if parsed.get("draft"):
+            reply_text = parsed["draft"]
+        else:
+            reply_text = parsed.get("summary", "Terima kasih atas pesan Anda.")
+    except:
+        reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
+    
+    send_whatsapp(incoming["phone"], reply_text)
+    
     return {"status": "ok"}
