@@ -2,7 +2,6 @@ import os
 import json
 from groq import Groq
 from dotenv import load_dotenv
-from app.services.gmail_service import get_recent_emails, send_email
 
 load_dotenv()
 
@@ -17,6 +16,7 @@ async def process_command(message: str):
     
     if is_email_command:
         try:
+            from app.services.gmail_service import get_recent_emails
             emails = get_recent_emails(max_results=3)
             email_context = f"Email terbaru di inbox: {json.dumps(emails, indent=2)}"
         except Exception as e:
@@ -27,17 +27,29 @@ async def process_command(message: str):
         messages=[
             {
                 "role": "system",
-                "content": f"""Kamu adalah Orion AI, asisten eksekusi perintah. {email_context}
+                "content": f"""Kamu adalah Orion AI, asisten eksekusi perintah bisnis.
+                
+{email_context}
+
+Tugasmu adalah memahami perintah pengguna dan memberikan respons yang helpful.
+Kamu bisa membantu:
+- Membalas email
+- Membalas pesan WhatsApp
+- Membuat pesan bisnis
+- Menjawab pertanyaan umum
+
 Selalu jawab dalam format JSON:
 {{
     "intent": "nama_aksi",
     "summary": "ringkasan aksi dalam bahasa Indonesia",
     "action": "detail teknis aksi",
     "needs_confirmation": true,
-    "draft": "draft balasan email jika intent balas_email",
-    "reply_to": "email pengirim jika intent balas_email",
-    "subject": "subject email jika intent balas_email"
-}}"""
+    "draft": "draft pesan/email yang siap dikirim",
+    "reply_to": "email/nomor tujuan jika ada",
+    "subject": "subject jika email"
+}}
+
+Untuk pesan WhatsApp masuk, buat balasan yang sopan dan profesional dalam Bahasa Indonesia."""
             },
             {
                 "role": "user",
