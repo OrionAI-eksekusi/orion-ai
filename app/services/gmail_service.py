@@ -16,10 +16,7 @@ SCOPES = [
 
 def get_gmail_service():
     creds = None
-    
-    # Coba baca dari environment variable (Railway)
     token_json = os.getenv("GMAIL_TOKEN_JSON")
-    
     if token_json:
         token_data = json.loads(token_json)
         creds = Credentials(
@@ -32,42 +29,48 @@ def get_gmail_service():
         )
     elif os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
-    
     return build('gmail', 'v1', credentials=creds)
 
 def get_recent_emails(max_results=5):
     try:
         service = get_gmail_service()
         results = service.users().messages().list(
-            userId='me',
-            maxResults=max_results,
-            labelIds=['INBOX']
+            userId='me', maxResults=max_results, labelIds=['INBOX']
         ).execute()
-        
         messages = results.get('messages', [])
         emails = []
-        
         for msg in messages:
             detail = service.users().messages().get(
-                userId='me',
-                id=msg['id'],
-                format='full'
+                userId='me', id=msg['id'], format='full'
             ).execute()
-            
             headers = detail['payload']['headers']
             subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
             sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
-            
+
+            # Ambil isi email lengkap
+            body = ''
+            payload = detail.get('payload', {})
+            if 'parts' in payload:
+                for part in payload['parts']:
+                    if part.get('mimeType') == 'text/plain':
+                        data = part.get('body', {}).get('data', '')
+                        if data:
+                            body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+                            break
+            else:
+                data = payload.get('body', {}).get('data', '')
+                if data:
+                    body = base64.urlsafe_b64decode(data).decode('utf-8', errors='ignore')
+
             emails.append({
                 'id': msg['id'],
                 'subject': subject,
                 'from': sender,
-                'snippet': detail.get('snippet', '')
+                'snippet': detail.get('snippet', ''),
+                'body': body[:1000]
             })
-        
         return emails
     except Exception as e:
         return []
@@ -80,8 +83,7 @@ def send_email(to: str, subject: str, body: str):
         message['subject'] = subject
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
         service.users().messages().send(
-            userId='me',
-            body={'raw': raw}
+            userId='me', body={'raw': raw}
         ).execute()
         return {"status": "sent", "to": to, "subject": subject}
     except Exception as e:
