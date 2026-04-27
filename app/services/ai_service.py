@@ -144,13 +144,13 @@ async def generate_briefing():
 Kategorikan setiap item menjadi:
 - URGENT: Butuh respons segera (client, deal, meeting, deadline, permintaan penting)
 - BISA_NANTI: Penting tapi tidak mendesak
-- SAMPAH: Newsletter, notifikasi, promosi, iklan
+- ARSIP: Newsletter, notifikasi otomatis, promosi, iklan yang tidak perlu dibalas
 
 Jawab HANYA dengan JSON murni tanpa backtick:
 {
     "urgent": [{"from": "nama pengirim", "subject": "subjek", "preview": "ringkasan singkat isi", "action": "apa yang harus dilakukan"}],
     "bisa_nanti": [{"from": "nama pengirim", "subject": "subjek", "preview": "ringkasan singkat isi"}],
-    "sampah": [{"from": "nama pengirim", "subject": "subjek"}],
+    "arsip": [{"from": "nama pengirim", "subject": "subjek"}],
     "summary": "Ringkasan 1 kalimat kondisi inbox hari ini"
 }"""
             },
