@@ -27,7 +27,6 @@ async def process_command(message: str):
                 e.get('subject', '').strip() not in ['No Subject', '']
             ]
 
-            # Cari email berdasarkan nama yang disebutkan user
             msg_lower = message.lower()
             for e in emails:
                 from_lower = e.get('from', '').lower()
@@ -40,7 +39,6 @@ async def process_command(message: str):
                 if target_email:
                     break
 
-            # Kalau tidak ketemu, pakai email pertama
             if not target_email and emails:
                 target_email = emails[0]
 
@@ -49,7 +47,6 @@ async def process_command(message: str):
 from: {target_email.get('from', '')}
 subject: {target_email.get('subject', '')}
 isi: {target_email.get('body', target_email.get('snippet', ''))}
-
 Gunakan field 'from' di atas sebagai reply_to."""
 
         except Exception as e:
@@ -71,7 +68,7 @@ Kamu bisa membantu:
 PENTING:
 1. Jawab HANYA dengan 1 JSON object saja, tanpa teks lain, tanpa backtick.
 2. Langsung buatkan balasan email sesuai isi email di atas, jangan tanya-tanya.
-3. Field reply_to WAJIB diisi dengan alamat email asli dari field "from" di atas. Contoh: jika from adalah "Zalvarani <zalvarani@gmail.com>" maka reply_to adalah "zalvarani@gmail.com".
+3. Field reply_to WAJIB diisi dengan alamat email asli dari field "from" di atas.
 4. Jangan pernah isi reply_to dengan placeholder apapun selain email asli.
 Selalu jawab dalam format JSON:
 {{
@@ -120,3 +117,57 @@ Untuk pesan WhatsApp, buat balasan yang sopan, natural, dan profesional dalam Ba
         "emails": emails,
         "parsed": parsed
     }
+
+
+async def generate_briefing():
+    from app.services.gmail_service import get_recent_emails
+    from app.services.database_service import get_wa_messages
+
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+    all_emails = get_recent_emails(max_results=10)
+    emails = [e for e in all_emails if
+        'azvickyfadzry02@gmail.com' not in e.get('from', '') and
+        'noreply' not in e.get('from', '').lower() and
+        'whatsapp' not in e.get('from', '').lower() and
+        e.get('subject', '').strip() not in ['No Subject', '']
+    ]
+    wa_messages = get_wa_messages(limit=10)
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut, lalu buat ringkasan prioritas.
+
+Kategorikan setiap item menjadi:
+- URGENT: Butuh respons segera (client, deal, meeting, deadline, permintaan penting)
+- BISA_NANTI: Penting tapi tidak mendesak
+- SAMPAH: Newsletter, notifikasi, promosi, iklan
+
+Jawab HANYA dengan JSON murni tanpa backtick:
+{
+    "urgent": [{"from": "nama pengirim", "subject": "subjek", "preview": "ringkasan singkat isi", "action": "apa yang harus dilakukan"}],
+    "bisa_nanti": [{"from": "nama pengirim", "subject": "subjek", "preview": "ringkasan singkat isi"}],
+    "sampah": [{"from": "nama pengirim", "subject": "subjek"}],
+    "summary": "Ringkasan 1 kalimat kondisi inbox hari ini"
+}"""
+            },
+            {
+                "role": "user",
+                "content": f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
+            }
+        ]
+    )
+
+    ai_response = response.choices[0].message.content
+
+    try:
+        clean = ai_response.replace('```json', '').replace('```', '').strip()
+        parsed = json.loads(clean)
+    except:
+        match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+        parsed = json.loads(match.group()) if match else {}
+
+    return parsed
