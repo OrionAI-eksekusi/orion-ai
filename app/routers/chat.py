@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from app.services.ai_service import process_command, generate_briefing
+from app.services.ai_service import process_command, generate_briefing, extract_tasks
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message
 from app.services.database_service import init_db, get_wa_messages, mark_replied
@@ -50,6 +50,11 @@ async def get_whatsapp_messages():
 async def get_briefing():
     result = await generate_briefing()
     return {"status": "success", "briefing": result}
+
+@router.get("/tasks")
+async def get_tasks():
+    result = await extract_tasks()
+    return {"status": "success", "tasks": result}
 
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):

@@ -171,3 +171,63 @@ Jawab HANYA dengan JSON murni tanpa backtick:
         parsed = json.loads(match.group()) if match else {}
 
     return parsed
+
+
+async def extract_tasks():
+    from app.services.gmail_service import get_recent_emails
+    from app.services.database_service import get_wa_messages
+
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+    all_emails = get_recent_emails(max_results=10)
+    emails = [e for e in all_emails if
+        'azvickyfadzry02@gmail.com' not in e.get('from', '') and
+        'noreply' not in e.get('from', '').lower() and
+        e.get('subject', '').strip() not in ['No Subject', '']
+    ]
+    wa_messages = get_wa_messages(limit=10)
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut.
+Deteksi semua task, meeting, deadline, permintaan file, dan follow up yang perlu dilakukan.
+
+Jawab HANYA dengan JSON murni tanpa backtick:
+{
+    "tasks": [
+        {
+            "id": "unik_id_123",
+            "type": "meeting/deadline/file/payment/followup",
+            "title": "judul task singkat",
+            "detail": "detail lengkap task",
+            "from": "nama pengirim",
+            "due": "tanggal/waktu jika ada, kosong jika tidak ada",
+            "priority": "high/medium/low",
+            "done": false
+        }
+    ],
+    "summary": "ringkasan 1 kalimat jumlah task yang ditemukan"
+}
+
+Jika tidak ada task, kembalikan tasks sebagai array kosong."""
+            },
+            {
+                "role": "user",
+                "content": f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
+            }
+        ]
+    )
+
+    ai_response = response.choices[0].message.content
+
+    try:
+        clean = ai_response.replace('```json', '').replace('```', '').strip()
+        parsed = json.loads(clean)
+    except:
+        match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+        parsed = json.loads(match.group()) if match else {"tasks": [], "summary": "Tidak ada task"}
+
+    return parsed
