@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from app.services.ai_service import process_command, generate_briefing, extract_tasks
+from app.services.ai_service import process_command, generate_briefing, extract_tasks, generate_wa_reply
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message
 from app.services.database_service import init_db, get_wa_messages, mark_replied
@@ -20,6 +20,10 @@ class SendEmailRequest(BaseModel):
 class SendWhatsAppRequest(BaseModel):
     phone: str
     message: str
+
+class WAReplyRequest(BaseModel):
+    message: str
+    business_context: str
 
 @router.post("/")
 async def chat(request: CommandRequest):
@@ -55,6 +59,11 @@ async def get_briefing():
 async def get_tasks():
     result = await extract_tasks()
     return {"status": "success", "tasks": result}
+
+@router.post("/wa-reply")
+async def wa_reply(request: WAReplyRequest):
+    result = await generate_wa_reply(request.message, request.business_context)
+    return {"status": "success", "reply": result}
 
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
