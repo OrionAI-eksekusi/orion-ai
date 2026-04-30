@@ -2,9 +2,10 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = "orion.db"
+DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True) if os.path.dirname(DB_PATH) else None
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
