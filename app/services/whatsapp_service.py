@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 from app.services.database_service import save_wa_message
 
 load_dotenv()
-
 FONNTE_TOKEN = os.getenv("FONNTE_TOKEN")
 
 def send_whatsapp(phone: str, message: str):
@@ -15,9 +14,8 @@ def send_whatsapp(phone: str, message: str):
     return response.json()
 
 def receive_whatsapp_message(data: dict):
-    phone = data.get("sender", "")
+    phone = data.get("phone", "") or data.get("sender", "")
     message = data.get("message", "")
-    # Simpan ke database
     if phone and message:
         save_wa_message(phone, message)
     return {"phone": phone, "message": message}
