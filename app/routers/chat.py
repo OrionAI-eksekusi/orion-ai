@@ -4,10 +4,14 @@ from app.services.ai_service import process_command, generate_briefing, extract_
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message
 from app.services.database_service import init_db, get_wa_messages, mark_replied
+import httpx
+import json
+import os
 
 init_db()
-
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+WA_GATEWAY_URL = os.getenv("WA_GATEWAY_URL", "http://localhost:3000")
 
 class CommandRequest(BaseModel):
     message: str
@@ -24,6 +28,17 @@ class SendWhatsAppRequest(BaseModel):
 class WAReplyRequest(BaseModel):
     message: str
     business_context: str
+
+class SaveProfileRequest(BaseModel):
+    name: str
+    tagline: str
+    field: str
+    description: str
+    products: list
+    how_to_order: str
+    contact: dict
+    working_hours: str
+    location: str
 
 @router.post("/")
 async def chat(request: CommandRequest):
@@ -64,6 +79,35 @@ async def get_tasks():
 async def wa_reply(request: WAReplyRequest):
     result = await generate_wa_reply(request.message, request.business_context)
     return {"status": "success", "reply": result}
+
+@router.get("/wa-qr")
+async def get_wa_qr():
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(f"{WA_GATEWAY_URL}/qr")
+            data = res.json()
+            return {"status": "success", "qr_url": data.get("qr_url", "")}
+    except:
+        return {"status": "error", "qr_url": ""}
+
+@router.get("/wa-status")
+async def get_wa_status():
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(f"{WA_GATEWAY_URL}/status")
+            data = res.json()
+            return {"connected": data.get("connected", False)}
+    except:
+        return {"connected": False}
+
+@router.post("/save-profile")
+async def save_profile(request: SaveProfileRequest):
+    try:
+        with open("business_profile.json", "w") as f:
+            json.dump(request.dict(), f, indent=2, ensure_ascii=False)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
