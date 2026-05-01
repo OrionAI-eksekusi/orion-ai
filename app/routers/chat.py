@@ -4,6 +4,7 @@ from app.services.ai_service import process_command, generate_briefing, extract_
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message
 from app.services.database_service import init_db, get_wa_messages, mark_replied
+from app.services.calendar_service import get_upcoming_events
 import httpx
 import json
 import os
@@ -74,6 +75,14 @@ async def get_briefing():
 async def get_tasks():
     result = await extract_tasks()
     return {"status": "success", "tasks": result}
+
+@router.get("/calendar-events")
+async def get_calendar_events():
+    try:
+        events = get_upcoming_events(max_results=10)
+        return {"status": "success", "events": events}
+    except Exception as e:
+        return {"status": "error", "events": [], "message": str(e)}
 
 @router.post("/wa-reply")
 async def wa_reply(request: WAReplyRequest):
