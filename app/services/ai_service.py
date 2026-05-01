@@ -127,7 +127,9 @@ async def generate_briefing():
     all_emails = get_recent_emails(max_results=10)
     emails = [e for e in all_emails if
         'azvickyfadzry02@gmail.com' not in e.get('from', '') and
-        'noreply' not in e.get('from', '').lower()
+        'noreply' not in e.get('from', '').lower() and
+        'whatsapp' not in e.get('from', '').lower() and
+        e.get('subject', '').strip() not in ['No Subject', '']
     ]
 
     response = client.chat.completions.create(
@@ -172,6 +174,7 @@ Jawab HANYA dengan JSON murni tanpa backtick:
 async def extract_tasks():
     from app.services.gmail_service import get_recent_emails
     from app.services.database_service import get_wa_messages
+    from app.services.calendar_service import add_calendar_event
 
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -200,7 +203,7 @@ Jawab HANYA dengan JSON murni tanpa backtick:
             "title": "judul task singkat",
             "detail": "detail lengkap task",
             "from": "nama pengirim",
-            "due": "tanggal/waktu jika ada, kosong jika tidak ada",
+            "due": "ISO datetime jika ada contoh 2026-05-01T10:00:00, kosong jika tidak ada",
             "priority": "high/medium/low",
             "done": false
         }
@@ -225,6 +228,20 @@ Jika tidak ada task, kembalikan tasks sebagai array kosong."""
     except:
         match = re.search(r'\{.*\}', ai_response, re.DOTALL)
         parsed = json.loads(match.group()) if match else {"tasks": [], "summary": "Tidak ada task"}
+
+    # Auto tambah ke Google Calendar kalau ada meeting/deadline
+    if parsed and parsed.get("tasks"):
+        for task in parsed["tasks"]:
+            if task.get("type") in ["meeting", "deadline"] and task.get("due"):
+                try:
+                    add_calendar_event(
+                        title=task.get("title", ""),
+                        description=f"Dari: {task.get('from', '')}\n{task.get('detail', '')}",
+                        start_time=task.get("due", ""),
+                        duration_hours=1
+                    )
+                except:
+                    pass
 
     return parsed
 
