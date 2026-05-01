@@ -1,14 +1,13 @@
 import os
 import json
 import re
-from groq import Groq
 from dotenv import load_dotenv
+from app.services.ai_provider import call_llm, parse_json_response
 
 load_dotenv()
 
-async def process_command(message: str):
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+async def process_command(message: str):
     email_keywords = ['email', 'balas', 'inbox', 'pesan masuk', 'surat']
     is_email_command = any(word in message.lower() for word in email_keywords)
 
@@ -52,12 +51,7 @@ Gunakan field 'from' di atas sebagai reply_to."""
         except Exception as e:
             email_context = "Gagal membaca email."
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": f"""Kamu adalah Orion AI, asisten eksekusi perintah bisnis.
+    system_prompt = f"""Kamu adalah Orion AI, asisten eksekusi perintah bisnis.
 {email_context}
 Tugasmu adalah memahami perintah pengguna dan memberikan respons yang helpful.
 Kamu bisa membantu:
@@ -81,22 +75,9 @@ Selalu jawab dalam format JSON:
     "subject": "Re: subject email asli"
 }}
 Untuk pesan WhatsApp, buat balasan yang sopan, natural, dan profesional dalam Bahasa Indonesia."""
-            },
-            {
-                "role": "user",
-                "content": message
-            }
-        ]
-    )
 
-    ai_response = response.choices[0].message.content
-
-    try:
-        clean = ai_response.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(clean)
-    except:
-        match = re.search(r'\{.*\}', ai_response, re.DOTALL)
-        parsed = json.loads(match.group()) if match else None
+    ai_response = await call_llm(system_prompt, message)
+    parsed = parse_json_response(ai_response)
 
     if parsed:
         parsed["needs_confirmation"] = True
@@ -122,8 +103,6 @@ Untuk pesan WhatsApp, buat balasan yang sopan, natural, dan profesional dalam Ba
 async def generate_briefing():
     from app.services.gmail_service import get_recent_emails
 
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
     all_emails = get_recent_emails(max_results=10)
     emails = [e for e in all_emails if
         'azvickyfadzry02@gmail.com' not in e.get('from', '') and
@@ -132,17 +111,12 @@ async def generate_briefing():
         e.get('subject', '').strip() not in ['No Subject', '']
     ]
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": """Kamu adalah Orion AI. Analisa email berikut, lalu buat ringkasan prioritas.
+    system_prompt = """Kamu adalah Orion AI. Analisa email berikut, lalu buat ringkasan prioritas.
 
 Kategorikan setiap email menjadi:
-- URGENT: Email dari manusia nyata yang butuh balasan (client, klien, rekan kerja, pertanyaan, permintaan, konfirmasi, dll)
+- URGENT: Email dari manusia nyata yang butuh balasan
 - BISA_NANTI: Email penting tapi tidak mendesak
-- ARSIP: Newsletter otomatis, notifikasi sistem, promosi iklan yang tidak perlu dibalas
+- ARSIP: Newsletter otomatis, notifikasi sistem, promosi
 
 Jawab HANYA dengan JSON murni tanpa backtick:
 {
@@ -151,32 +125,15 @@ Jawab HANYA dengan JSON murni tanpa backtick:
     "arsip": [{"from": "nama pengirim", "subject": "subjek email"}],
     "summary": "Ringkasan 1 kalimat kondisi inbox hari ini"
 }"""
-            },
-            {
-                "role": "user",
-                "content": f"Email:\n{json.dumps(emails, indent=2)}"
-            }
-        ]
-    )
 
-    ai_response = response.choices[0].message.content
-
-    try:
-        clean = ai_response.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(clean)
-    except:
-        match = re.search(r'\{.*\}', ai_response, re.DOTALL)
-        parsed = json.loads(match.group()) if match else {}
-
-    return parsed
+    ai_response = await call_llm(system_prompt, f"Email:\n{json.dumps(emails, indent=2)}")
+    return parse_json_response(ai_response) or {}
 
 
 async def extract_tasks():
     from app.services.gmail_service import get_recent_emails
     from app.services.database_service import get_wa_messages
     from app.services.calendar_service import add_calendar_event
-
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
     all_emails = get_recent_emails(max_results=10)
     emails = [e for e in all_emails if
@@ -186,13 +143,8 @@ async def extract_tasks():
     ]
     wa_messages = get_wa_messages(limit=10)
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut.
-Deteksi semua task, meeting, deadline, permintaan file, dan follow up yang perlu dilakukan.
+    system_prompt = """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut.
+Deteksi semua task, meeting, deadline, permintaan file, dan follow up.
 
 Jawab HANYA dengan JSON murni tanpa backtick:
 {
@@ -212,25 +164,14 @@ Jawab HANYA dengan JSON murni tanpa backtick:
 }
 
 Jika tidak ada task, kembalikan tasks sebagai array kosong."""
-            },
-            {
-                "role": "user",
-                "content": f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
-            }
-        ]
+
+    ai_response = await call_llm(
+        system_prompt,
+        f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
     )
+    parsed = parse_json_response(ai_response) or {"tasks": [], "summary": "Tidak ada task"}
 
-    ai_response = response.choices[0].message.content
-
-    try:
-        clean = ai_response.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(clean)
-    except:
-        match = re.search(r'\{.*\}', ai_response, re.DOTALL)
-        parsed = json.loads(match.group()) if match else {"tasks": [], "summary": "Tidak ada task"}
-
-    # Auto tambah ke Google Calendar kalau ada meeting/deadline
-    if parsed and parsed.get("tasks"):
+    if parsed.get("tasks"):
         for task in parsed["tasks"]:
             if task.get("type") in ["meeting", "deadline"] and task.get("due"):
                 try:
@@ -240,27 +181,11 @@ Jika tidak ada task, kembalikan tasks sebagai array kosong."""
                         start_time=task.get("due", ""),
                         duration_hours=1
                     )
-                except:
+                except Exception:
                     pass
 
     return parsed
 
 
 async def generate_wa_reply(message: str, business_context: str):
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {
-                "role": "system",
-                "content": business_context
-            },
-            {
-                "role": "user",
-                "content": message
-            }
-        ]
-    )
-
-    return response.choices[0].message.content
+    return await call_llm(business_context, message)

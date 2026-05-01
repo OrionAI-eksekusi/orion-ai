@@ -148,22 +148,48 @@ async def save_profile(request: SaveProfileRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# ✅ FIXED: Webhook sekarang pakai memory
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
     data = await request.json()
     incoming = receive_whatsapp_message(data)
+
     if not incoming["message"] or not incoming["phone"]:
         return {"status": "ok"}
-    ai_result = await process_command(incoming["message"])
+
+    phone = incoming["phone"]
+    message = incoming["message"]
+
+    # 1. Ambil memory customer SEBELUM generate reply
+    customer_context = build_customer_context(phone)
+
+    # 2. Generate reply pakai memory context
+    ai_result = await generate_wa_reply(message, customer_context)
+
     reply_text = ""
     try:
-        parsed = ai_result.get("parsed", {})
-        if parsed.get("draft"):
-            reply_text = parsed["draft"]
+        if isinstance(ai_result, dict):
+            reply_text = (
+                ai_result.get("reply")
+                or ai_result.get("draft")
+                or ai_result.get("summary")
+                or "Terima kasih atas pesan Anda."
+            )
+        elif isinstance(ai_result, str):
+            reply_text = ai_result
         else:
-            reply_text = parsed.get("summary", "Terima kasih atas pesan Anda.")
-    except:
+            reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
+    except Exception:
         reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
-    send_whatsapp(incoming["phone"], reply_text)
-    mark_replied(incoming["phone"])
+
+    # 3. Kirim reply
+    send_whatsapp(phone, reply_text)
+    mark_replied(phone)
+
+    # 4. Simpan ke memory SETELAH reply terkirim
+    try:
+        update_customer_memory(phone, message, reply_text)
+    except Exception as e:
+        print(f"[MEMORY ERROR] {phone}: {e}")
+
     return {"status": "ok"}
