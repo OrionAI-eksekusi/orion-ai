@@ -35,9 +35,17 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
         raise ValueError("GEMINI_API_KEY tidak ada di .env")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"parts": [{"text": user_message}]}],
-        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 2048}
+        "contents": [
+            {
+                "parts": [
+                    {"text": f"{system_prompt}\n\n{user_message}"}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 2048
+        }
     }
     async with httpx.AsyncClient(timeout=30) as client:
         res = await client.post(url, json=payload)
