@@ -121,7 +121,6 @@ Untuk pesan WhatsApp, buat balasan yang sopan, natural, dan profesional dalam Ba
 
 async def generate_briefing():
     from app.services.gmail_service import get_recent_emails
-    from app.services.database_service import get_wa_messages
 
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -132,34 +131,30 @@ async def generate_briefing():
         'whatsapp' not in e.get('from', '').lower() and
         e.get('subject', '').strip() not in ['No Subject', '']
     ]
-    wa_messages = get_wa_messages(limit=10)
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {
                 "role": "system",
-                "content": """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut, lalu buat ringkasan prioritas.
+                "content": """Kamu adalah Orion AI. Analisa email berikut, lalu buat ringkasan prioritas.
 
-Kategorikan setiap item menjadi:
-- URGENT: Semua pesan dari manusia nyata yang butuh balasan (customer, klien, rekan kerja, pertanyaan, permintaan, konfirmasi, izin, dll)
-- BISA_NANTI: Pesan penting tapi tidak mendesak, bisa dibalas nanti
-- ARSIP: Hanya newsletter otomatis, notifikasi sistem, promosi iklan yang jelas tidak perlu dibalas
-
-PENTING: Pesan WhatsApp dari orang nyata SELALU masuk URGENT atau BISA_NANTI, BUKAN arsip!
-Status@broadcast adalah pengecualian, itu masuk arsip.
+Kategorikan setiap email menjadi:
+- URGENT: Email dari manusia nyata yang butuh balasan (client, klien, rekan kerja, pertanyaan, permintaan, konfirmasi, dll)
+- BISA_NANTI: Email penting tapi tidak mendesak
+- ARSIP: Newsletter otomatis, notifikasi sistem, promosi iklan yang tidak perlu dibalas
 
 Jawab HANYA dengan JSON murni tanpa backtick:
 {
-    "urgent": [{"from": "nama pengirim", "subject": "subjek atau isi singkat", "preview": "ringkasan singkat isi", "action": "apa yang harus dilakukan"}],
-    "bisa_nanti": [{"from": "nama pengirim", "subject": "subjek atau isi singkat", "preview": "ringkasan singkat isi"}],
-    "arsip": [{"from": "nama pengirim", "subject": "subjek atau isi singkat"}],
+    "urgent": [{"from": "nama pengirim", "subject": "subjek email", "preview": "ringkasan singkat isi", "action": "apa yang harus dilakukan"}],
+    "bisa_nanti": [{"from": "nama pengirim", "subject": "subjek email", "preview": "ringkasan singkat isi"}],
+    "arsip": [{"from": "nama pengirim", "subject": "subjek email"}],
     "summary": "Ringkasan 1 kalimat kondisi inbox hari ini"
 }"""
             },
             {
                 "role": "user",
-                "content": f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
+                "content": f"Email:\n{json.dumps(emails, indent=2)}"
             }
         ]
     )
