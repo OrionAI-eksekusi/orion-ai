@@ -142,15 +142,18 @@ async def generate_briefing():
                 "content": """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut, lalu buat ringkasan prioritas.
 
 Kategorikan setiap item menjadi:
-- URGENT: Butuh respons segera (client, deal, meeting, deadline, permintaan penting)
-- BISA_NANTI: Penting tapi tidak mendesak
-- ARSIP: Newsletter, notifikasi otomatis, promosi, iklan yang tidak perlu dibalas
+- URGENT: Semua pesan dari manusia nyata yang butuh balasan (customer, klien, rekan kerja, pertanyaan, permintaan, konfirmasi, izin, dll)
+- BISA_NANTI: Pesan penting tapi tidak mendesak, bisa dibalas nanti
+- ARSIP: Hanya newsletter otomatis, notifikasi sistem, promosi iklan yang jelas tidak perlu dibalas
+
+PENTING: Pesan WhatsApp dari orang nyata SELALU masuk URGENT atau BISA_NANTI, BUKAN arsip!
+Status@broadcast adalah pengecualian, itu masuk arsip.
 
 Jawab HANYA dengan JSON murni tanpa backtick:
 {
-    "urgent": [{"from": "nama pengirim", "subject": "subjek", "preview": "ringkasan singkat isi", "action": "apa yang harus dilakukan"}],
-    "bisa_nanti": [{"from": "nama pengirim", "subject": "subjek", "preview": "ringkasan singkat isi"}],
-    "arsip": [{"from": "nama pengirim", "subject": "subjek"}],
+    "urgent": [{"from": "nama pengirim", "subject": "subjek atau isi singkat", "preview": "ringkasan singkat isi", "action": "apa yang harus dilakukan"}],
+    "bisa_nanti": [{"from": "nama pengirim", "subject": "subjek atau isi singkat", "preview": "ringkasan singkat isi"}],
+    "arsip": [{"from": "nama pengirim", "subject": "subjek atau isi singkat"}],
     "summary": "Ringkasan 1 kalimat kondisi inbox hari ini"
 }"""
             },
