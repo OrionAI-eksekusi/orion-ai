@@ -5,11 +5,13 @@ from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message
 from app.services.database_service import init_db, get_wa_messages, mark_replied
 from app.services.calendar_service import get_upcoming_events
+from app.services.memory_service import init_memory_db, get_customer_memory, update_customer_memory, get_all_customers, build_customer_context
 import httpx
 import json
 import os
 
 init_db()
+init_memory_db()
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 WA_GATEWAY_URL = os.getenv("WA_GATEWAY_URL", "http://localhost:3000")
@@ -29,6 +31,7 @@ class SendWhatsAppRequest(BaseModel):
 class WAReplyRequest(BaseModel):
     message: str
     business_context: str
+    phone: str = ""
 
 class SaveProfileRequest(BaseModel):
     name: str
@@ -40,6 +43,11 @@ class SaveProfileRequest(BaseModel):
     contact: dict
     working_hours: str
     location: str
+
+class UpdateMemoryRequest(BaseModel):
+    phone: str
+    message: str
+    reply: str
 
 @router.post("/")
 async def chat(request: CommandRequest):
@@ -83,6 +91,28 @@ async def get_calendar_events():
         return {"status": "success", "events": events}
     except Exception as e:
         return {"status": "error", "events": [], "message": str(e)}
+
+@router.get("/customer-memory/{phone}")
+async def get_memory(phone: str):
+    context = build_customer_context(phone)
+    memory = get_customer_memory(phone)
+    return {"status": "success", "context": context, "memory": memory}
+
+@router.post("/update-memory")
+async def update_memory(request: UpdateMemoryRequest):
+    try:
+        update_customer_memory(request.phone, request.message, request.reply)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.get("/customers")
+async def get_customers():
+    try:
+        customers = get_all_customers()
+        return {"status": "success", "customers": customers}
+    except Exception as e:
+        return {"status": "error", "customers": [], "message": str(e)}
 
 @router.post("/wa-reply")
 async def wa_reply(request: WAReplyRequest):
