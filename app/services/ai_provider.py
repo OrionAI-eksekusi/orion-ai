@@ -1,4 +1,3 @@
-cat > app/services/ai_provider.py << 'EOF'
 import os
 import json
 import re
@@ -49,7 +48,7 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
 
 # async def _call_claude(system_prompt: str, user_message: str) -> str:
 #     import anthropic
-#     client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+#     client = anthropic.Anthropic(api_key=os.getenv("CLAUDE_API_KEY"))
 #     response = client.messages.create(
 #         model="claude-sonnet-4-20250514",
 #         max_tokens=2048,
@@ -97,7 +96,7 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
             except Exception as gemini_error:
                 logger.error(f"[LLM] Gemini juga error: {gemini_error}")
 
-        # if provider != "claude" and CLAUDE_API_KEY:
+        # if provider != "claude" and os.getenv("CLAUDE_API_KEY"):
         #     try:
         #         logger.info("[LLM] Fallback ke Claude")
         #         return await _call_claude(system_prompt, user_message)
@@ -123,4 +122,3 @@ def parse_json_response(ai_response: str):
             except Exception:
                 pass
     return None
-EOF
