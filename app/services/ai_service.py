@@ -127,9 +127,7 @@ async def generate_briefing():
     all_emails = get_recent_emails(max_results=10)
     emails = [e for e in all_emails if
         'azvickyfadzry02@gmail.com' not in e.get('from', '') and
-        'noreply' not in e.get('from', '').lower() and
-        'whatsapp' not in e.get('from', '').lower() and
-        e.get('subject', '').strip() not in ['No Subject', '']
+        'noreply' not in e.get('from', '').lower()
     ]
 
     response = client.chat.completions.create(
