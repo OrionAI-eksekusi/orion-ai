@@ -10,6 +10,7 @@ import httpx
 import json
 import os
 import sqlite3
+import base64
 
 init_db()
 init_memory_db()
@@ -83,13 +84,13 @@ async def send_fcm_notification(title: str, body: str, data: dict = {}):
         import firebase_admin
         from firebase_admin import credentials, messaging
 
-        # Init Firebase Admin sekali saja
         if not firebase_admin._apps:
-            service_account_path = os.path.join(os.path.dirname(__file__), '../../firebase-service-account.json')
-            if not os.path.exists(service_account_path):
-                print("[FCM] Service account file tidak ditemukan")
+            sa_base64 = os.getenv("FIREBASE_SERVICE_ACCOUNT_BASE64", "")
+            if not sa_base64:
+                print("[FCM] FIREBASE_SERVICE_ACCOUNT_BASE64 tidak ada")
                 return
-            cred = credentials.Certificate(service_account_path)
+            sa_json = json.loads(base64.b64decode(sa_base64).decode('utf-8'))
+            cred = credentials.Certificate(sa_json)
             firebase_admin.initialize_app(cred)
 
         token = get_fcm_token()
@@ -151,7 +152,6 @@ async def get_whatsapp_messages():
 @router.get("/briefing")
 async def get_briefing():
     result = await generate_briefing()
-    # Kirim notif kalau ada email urgent
     try:
         if result and result.get("urgent") and len(result["urgent"]) > 0:
             urgent_count = len(result["urgent"])
@@ -167,7 +167,6 @@ async def get_briefing():
 @router.get("/tasks")
 async def get_tasks():
     result = await extract_tasks()
-    # Kirim notif kalau ada task baru
     try:
         if result and result.get("tasks") and len(result["tasks"]) > 0:
             high_priority = [t for t in result["tasks"] if t.get("priority") == "high"]
@@ -256,10 +255,7 @@ async def whatsapp_webhook(request: Request):
     phone = incoming["phone"]
     message = incoming["message"]
 
-    # 1. Ambil memory customer SEBELUM generate reply
     customer_context = build_customer_context(phone)
-
-    # 2. Generate reply pakai memory context
     ai_result = await generate_wa_reply(message, customer_context)
 
     reply_text = ""
@@ -278,17 +274,14 @@ async def whatsapp_webhook(request: Request):
     except Exception:
         reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
 
-    # 3. Kirim reply
     send_whatsapp(phone, reply_text)
     mark_replied(phone)
 
-    # 4. Simpan ke memory SETELAH reply terkirim
     try:
         update_customer_memory(phone, message, reply_text)
     except Exception as e:
         print(f"[MEMORY ERROR] {phone}: {e}")
 
-    # 5. Kirim FCM notif ke HP
     try:
         sender = phone.replace("@lid", "").replace("@s.whatsapp.net", "")
         await send_fcm_notification(
