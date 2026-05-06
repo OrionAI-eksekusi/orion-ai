@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, BackgroundTasks
 from pydantic import BaseModel
 from app.services.ai_service import process_command, generate_briefing, extract_tasks, generate_wa_reply
 from app.services.gmail_service import get_recent_emails, send_email
-from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message
+from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message, broadcast_whatsapp
 from app.services.database_service import init_db, get_wa_messages, mark_replied
 from app.services.calendar_service import get_upcoming_events
 from app.services.memory_service import init_memory_db, get_customer_memory, update_customer_memory, get_all_customers, build_customer_context
@@ -54,6 +54,10 @@ class UpdateMemoryRequest(BaseModel):
 
 class SaveFcmTokenRequest(BaseModel):
     token: str
+
+class BroadcastRequest(BaseModel):
+    message: str
+    target: str = "all"  # "all" atau list phone tertentu
 
 # ── FCM Helper ─────────────────────────────────────────────
 def save_fcm_token_db(token: str):
@@ -114,6 +118,23 @@ async def send_fcm_notification(title: str, body: str, data: dict = {}):
         print(f"[FCM] Notif terkirim: {response}")
     except Exception as e:
         print(f"[FCM ERROR] {e}")
+
+# ── Broadcast Helper ───────────────────────────────────────
+async def _run_broadcast(phones: list, message: str):
+    """Jalankan broadcast di background"""
+    try:
+        print(f"[BROADCAST] Mulai kirim ke {len(phones)} nomor...")
+        result = broadcast_whatsapp(phones, message, delay=2.0)
+        print(f"[BROADCAST] Selesai: {result['success']} berhasil, {result['failed']} gagal")
+        
+        # Notif ke HP setelah selesai
+        await send_fcm_notification(
+            title="📢 Broadcast Selesai!",
+            body=f"Terkirim ke {result['success']}/{result['total']} customer",
+            data={"type": "broadcast"}
+        )
+    except Exception as e:
+        print(f"[BROADCAST ERROR] {e}")
 
 # ── Endpoints ──────────────────────────────────────────────
 @router.post("/save-fcm-token")
@@ -241,6 +262,33 @@ async def save_profile(request: SaveProfileRequest):
         with open("business_profile.json", "w") as f:
             json.dump(request.dict(), f, indent=2, ensure_ascii=False)
         return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# ── Broadcast Endpoint ─────────────────────────────────────
+@router.post("/broadcast")
+async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks):
+    try:
+        # Ambil semua customer
+        customers = get_all_customers()
+        
+        if not customers:
+            return {"status": "error", "message": "Tidak ada customer ditemukan"}
+        
+        # Filter yang punya nomor phone
+        phones = [c["phone"] for c in customers if c.get("phone")]
+        
+        if not phones:
+            return {"status": "error", "message": "Tidak ada nomor customer"}
+
+        # Jalankan broadcast di background
+        background_tasks.add_task(_run_broadcast, phones, request.message)
+
+        return {
+            "status": "success",
+            "message": f"Broadcast dimulai ke {len(phones)} customer",
+            "total": len(phones)
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
