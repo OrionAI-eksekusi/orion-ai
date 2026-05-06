@@ -152,39 +152,60 @@ def search_drive_files(query: str, max_results: int = 5) -> list:
         return []
 
 def download_drive_file(file_id: str, filename: str) -> str:
-    """Download file dari Google Drive ke /tmp"""
+    """Download file dari Google Drive ke /tmp - FIXED untuk PDF"""
     try:
-        service = get_drive_service()
         import io
         from googleapiclient.http import MediaIoBaseDownload
 
-        # Cek apakah Google Docs (perlu export)
+        service = get_drive_service()
+
+        # Cek tipe file
         file_meta = service.files().get(fileId=file_id, fields='mimeType,name').execute()
         mime_type = file_meta.get('mimeType', '')
 
+        # Google Docs perlu di-export
         export_types = {
-            'application/vnd.google-apps.spreadsheet': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'),
-            'application/vnd.google-apps.document': ('application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'),
-            'application/vnd.google-apps.presentation': ('application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'),
+            'application/vnd.google-apps.spreadsheet': (
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'),
+            'application/vnd.google-apps.document': (
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'),
+            'application/vnd.google-apps.presentation': (
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'),
         }
 
-        tmp_path = f"/tmp/{filename}"
+        # Bersihkan nama file
+        safe_filename = filename.replace('/', '_').replace(' ', '_')
+        tmp_path = f"/tmp/{safe_filename}"
 
         if mime_type in export_types:
             export_mime, ext = export_types[mime_type]
-            if not filename.endswith(ext):
-                tmp_path = f"/tmp/{filename}{ext}"
+            if not safe_filename.endswith(ext):
+                tmp_path = f"/tmp/{safe_filename}{ext}"
             request = service.files().export_media(fileId=file_id, mimeType=export_mime)
         else:
+            # File biasa — PDF, Excel, gambar, dll
             request = service.files().get_media(fileId=file_id)
 
-        with io.FileIO(tmp_path, 'wb') as fh:
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
+        # Download ke BytesIO dulu
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        # Tulis ke file
+        with open(tmp_path, 'wb') as f:
+            f.write(fh.getvalue())
+
+        file_size = os.path.getsize(tmp_path)
+        print(f"[DRIVE] Downloaded: {tmp_path} ({file_size} bytes)")
+
+        if file_size == 0:
+            print(f"[DRIVE] File kosong!")
+            return ""
 
         return tmp_path
+
     except Exception as e:
         print(f"[DRIVE DOWNLOAD ERROR] {e}")
         return ""
@@ -192,8 +213,8 @@ def download_drive_file(file_id: str, filename: str) -> str:
 def search_contact_email(name: str) -> str:
     """Cari email kontak berdasarkan nama"""
     try:
+        import re
         service = get_gmail_service()
-        # Cari di sent emails untuk menemukan email kontak
         results = service.users().messages().list(
             userId='me',
             maxResults=50,
@@ -209,7 +230,6 @@ def search_contact_email(name: str) -> str:
             headers = detail['payload']['headers']
             for h in headers:
                 if h['name'] in ['To', 'From'] and name.lower() in h['value'].lower():
-                    import re
                     match = re.search(r'[\w.+-]+@[\w-]+\.[a-zA-Z]+', h['value'])
                     if match:
                         return match.group(0)
