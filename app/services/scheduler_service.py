@@ -8,17 +8,16 @@ scheduler = AsyncIOScheduler()
 async def proactive_check():
     try:
         logger.info("[PROACTIVE] Memulai pengecekan otomatis...")
-        
         from app.services.ai_service import generate_briefing
         from app.routers.chat import send_fcm_notification, get_fcm_token
-        
+
         token = get_fcm_token()
         if not token:
             logger.info("[PROACTIVE] Tidak ada FCM token, skip")
             return
-        
+
         result = await generate_briefing()
-        
+
         if result and result.get("urgent"):
             urgent = result["urgent"]
             count = len(urgent)
@@ -32,7 +31,7 @@ async def proactive_check():
                     data={"type": "email"}
                 )
                 logger.info(f"[PROACTIVE] Notif terkirim: {count} email urgent")
-        
+
     except Exception as e:
         logger.error(f"[PROACTIVE ERROR] {e}")
 
@@ -40,7 +39,7 @@ def start_scheduler():
     try:
         scheduler.add_job(
             proactive_check,
-            trigger=IntervalTrigger(minutes=1),
+            trigger=IntervalTrigger(minutes=30),
             id="proactive_check",
             replace_existing=True,
         )
