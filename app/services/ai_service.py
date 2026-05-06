@@ -6,10 +6,59 @@ from app.services.ai_provider import call_llm, parse_json_response
 
 load_dotenv()
 
+# ── Detect apakah pesan adalah request quotation ──────────
+def is_quote_request(message: str) -> bool:
+    keywords = [
+        'harga', 'price', 'quotation', 'quote', 'penawaran',
+        'berapa', 'how much', 'cost', 'biaya', 'tarif',
+        'minta harga', 'request harga', 'info harga', 'daftar harga'
+    ]
+    msg_lower = message.lower()
+    return any(kw in msg_lower for kw in keywords)
+
 
 async def process_command(message: str):
     email_keywords = ['email', 'balas', 'inbox', 'pesan masuk', 'surat']
+    broadcast_keywords = ['broadcast', 'kirim semua', 'blast', 'semua customer', 'semua pelanggan']
+    quote_keywords = ['quotation', 'quote', 'penawaran harga', 'buat quotation']
+
     is_email_command = any(word in message.lower() for word in email_keywords)
+    is_broadcast = any(word in message.lower() for word in broadcast_keywords)
+    is_quote = any(word in message.lower() for word in quote_keywords)
+
+    # ── Handle Broadcast ──
+    if is_broadcast:
+        return {
+            "status": "success",
+            "message": message,
+            "response": "Broadcast dimulai",
+            "parsed": {
+                "intent": "broadcast",
+                "summary": "Mengirim pesan broadcast ke semua customer",
+                "action": "broadcast",
+                "needs_confirmation": True,
+                "draft": message.replace("broadcast", "").replace("kirim semua", "").strip(),
+                "reply_to": "",
+                "subject": ""
+            }
+        }
+
+    # ── Handle Quote ──
+    if is_quote:
+        return {
+            "status": "success",
+            "message": message,
+            "response": "Membuat quotation",
+            "parsed": {
+                "intent": "quotation",
+                "summary": "Membuat quotation PDF",
+                "action": "generate_quote",
+                "needs_confirmation": True,
+                "draft": "",
+                "reply_to": "",
+                "subject": ""
+            }
+        }
 
     email_context = ""
     emails = []
@@ -187,5 +236,28 @@ Jika tidak ada task, kembalikan tasks sebagai array kosong."""
     return parsed
 
 
-async def generate_wa_reply(message: str, business_context: str):
+async def generate_wa_reply(message: str, business_context: str) -> str:
+    """Generate WA reply — detect quotation request otomatis"""
+    if is_quote_request(message):
+        # Extract nama customer dari context
+        customer_name = "Customer"
+        try:
+            import json as j
+            ctx = j.loads(business_context) if business_context.startswith("{") else {}
+            customer_name = ctx.get("name", "Customer")
+        except:
+            pass
+
+        # Buat quotation
+        try:
+            from app.services.quote_service import generate_quote_from_request
+            quote = await generate_quote_from_request(
+                customer_name=customer_name,
+                customer_phone="",
+                request_text=message
+            )
+            return f"Terima kasih atas permintaan Anda! Kami telah menyiapkan penawaran harga untuk Anda. Quotation No: {quote['quote_number']} sedang diproses dan akan segera kami kirimkan. Ada yang ingin ditanyakan lebih lanjut? 😊"
+        except Exception as e:
+            print(f"[QUOTE ERROR] {e}")
+
     return await call_llm(business_context, message)
