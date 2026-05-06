@@ -40,7 +40,7 @@ def start_scheduler():
     try:
         scheduler.add_job(
             proactive_check,
-            trigger=IntervalTrigger(minutes=30),
+            trigger=IntervalTrigger(minutes=1),
             id="proactive_check",
             replace_existing=True,
         )
