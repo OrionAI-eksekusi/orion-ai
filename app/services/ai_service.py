@@ -6,25 +6,158 @@ from app.services.ai_provider import call_llm, parse_json_response
 
 load_dotenv()
 
-# ── Detect apakah pesan adalah request quotation ──────────
+# ── Detect request quotation ──────────────────────────────
 def is_quote_request(message: str) -> bool:
     keywords = [
         'harga', 'price', 'quotation', 'quote', 'penawaran',
         'berapa', 'how much', 'cost', 'biaya', 'tarif',
         'minta harga', 'request harga', 'info harga', 'daftar harga'
     ]
-    msg_lower = message.lower()
-    return any(kw in msg_lower for kw in keywords)
+    return any(kw in message.lower() for kw in keywords)
 
+# ── Detect perintah kirim file ────────────────────────────
+def is_send_file_command(message: str) -> bool:
+    keywords = [
+        'kirimkan file', 'kirim file', 'send file', 'kirimkan dokumen',
+        'kirim dokumen', 'kirimkan laporan', 'kirim laporan',
+        'forward file', 'kirimkan ke', 'tolong kirim', 'kirim data'
+    ]
+    return any(kw in message.lower() for kw in keywords)
+
+# ── Extract info dari perintah kirim file ─────────────────
+async def extract_send_file_info(message: str) -> dict:
+    """Extract nama file, nama penerima, email dari perintah"""
+    system_prompt = """Dari perintah berikut, ekstrak informasi dalam JSON:
+{
+    "file_name": "nama file yang ingin dikirim (tanpa ekstensi jika tidak disebutkan)",
+    "recipient_name": "nama penerima",
+    "recipient_email": "email penerima jika disebutkan, kosong jika tidak",
+    "message_body": "pesan yang ingin disertakan dalam email",
+    "subject": "subject email yang sesuai"
+}
+Respond HANYA dengan JSON."""
+
+    try:
+        response = await call_llm(system_prompt, message)
+        clean = response.replace('```json', '').replace('```', '').strip()
+        return json.loads(clean)
+    except:
+        return {
+            "file_name": "",
+            "recipient_name": "",
+            "recipient_email": "",
+            "message_body": "Terlampir file yang diminta.",
+            "subject": "File dari Orion AI"
+        }
 
 async def process_command(message: str):
     email_keywords = ['email', 'balas', 'inbox', 'pesan masuk', 'surat']
     broadcast_keywords = ['broadcast', 'kirim semua', 'blast', 'semua customer', 'semua pelanggan']
     quote_keywords = ['quotation', 'quote', 'penawaran harga', 'buat quotation']
+    file_keywords = ['kirimkan file', 'kirim file', 'kirimkan dokumen', 'kirim dokumen',
+                     'kirimkan laporan', 'kirim laporan', 'kirimkan ke', 'kirim data']
 
     is_email_command = any(word in message.lower() for word in email_keywords)
     is_broadcast = any(word in message.lower() for word in broadcast_keywords)
     is_quote = any(word in message.lower() for word in quote_keywords)
+    is_file_send = any(word in message.lower() for word in file_keywords)
+
+    # ── Handle Kirim File dari Drive ──
+    if is_file_send:
+        try:
+            # Extract info dari perintah
+            info = await extract_send_file_info(message)
+            file_name = info.get("file_name", "")
+            recipient_name = info.get("recipient_name", "")
+            recipient_email = info.get("recipient_email", "")
+            subject = info.get("subject", "File Terlampir")
+            body = info.get("message_body", "Terlampir file yang diminta.")
+
+            result_msg = f"Mencari file '{file_name}' di Google Drive..."
+            found_files = []
+            download_path = ""
+            actual_filename = ""
+
+            if file_name:
+                from app.services.gmail_service import search_drive_files, download_drive_file
+                found_files = search_drive_files(file_name, max_results=3)
+
+            # Cari email penerima jika tidak disebutkan
+            if not recipient_email and recipient_name:
+                from app.services.gmail_service import search_contact_email
+                from app.services.memory_service import get_all_customers
+                
+                # Cek di memory customer dulu
+                customers = get_all_customers()
+                for c in customers:
+                    if recipient_name.lower() in (c.get("name", "") or "").lower():
+                        recipient_email = c.get("phone", "")
+                        break
+                
+                # Kalau tidak ketemu, cari di Gmail contacts
+                if not recipient_email or "@" not in recipient_email:
+                    recipient_email = search_contact_email(recipient_name)
+
+            # Download dan kirim file jika ketemu
+            if found_files and recipient_email and "@" in recipient_email:
+                file_info = found_files[0]
+                actual_filename = file_info["name"]
+                from app.services.gmail_service import download_drive_file, send_email_with_attachment
+                download_path = download_drive_file(file_info["id"], actual_filename)
+                
+                if download_path and os.path.exists(download_path):
+                    send_result = send_email_with_attachment(
+                        to=recipient_email,
+                        subject=subject,
+                        body=f"Halo {recipient_name},\n\n{body}\n\nSalam,\nOrion AI",
+                        file_path=download_path,
+                        filename=actual_filename
+                    )
+                    
+                    if send_result.get("status") == "sent":
+                        summary = f"✅ File '{actual_filename}' berhasil dikirim ke {recipient_name} ({recipient_email})"
+                    else:
+                        summary = f"❌ Gagal mengirim file: {send_result.get('message', '')}"
+                else:
+                    summary = f"❌ Gagal download file '{actual_filename}' dari Drive"
+            elif not found_files:
+                summary = f"❌ File '{file_name}' tidak ditemukan di Google Drive"
+            elif not recipient_email:
+                summary = f"❌ Email {recipient_name} tidak ditemukan. Sebutkan emailnya secara langsung"
+            else:
+                summary = "❌ Gagal memproses perintah"
+
+            return {
+                "status": "success",
+                "message": message,
+                "response": summary,
+                "parsed": {
+                    "intent": "send_file",
+                    "summary": summary,
+                    "action": "send_file_email",
+                    "needs_confirmation": False,
+                    "draft": body,
+                    "reply_to": recipient_email,
+                    "subject": subject,
+                    "file_name": actual_filename,
+                    "found_files": [f["name"] for f in found_files],
+                }
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": message,
+                "response": f"Gagal kirim file: {str(e)}",
+                "parsed": {
+                    "intent": "send_file",
+                    "summary": f"Gagal: {str(e)}",
+                    "action": "error",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
 
     # ── Handle Broadcast ──
     if is_broadcast:
@@ -107,6 +240,7 @@ Kamu bisa membantu:
 - Membalas email
 - Membalas pesan WhatsApp
 - Membuat pesan bisnis
+- Mengirim file dari Google Drive via email
 - Menjawab pertanyaan umum
 PENTING:
 1. Jawab HANYA dengan 1 JSON object saja, tanpa teks lain, tanpa backtick.
@@ -239,16 +373,13 @@ Jika tidak ada task, kembalikan tasks sebagai array kosong."""
 async def generate_wa_reply(message: str, business_context: str) -> str:
     """Generate WA reply — detect quotation request otomatis"""
     if is_quote_request(message):
-        # Extract nama customer dari context
         customer_name = "Customer"
         try:
-            import json as j
-            ctx = j.loads(business_context) if business_context.startswith("{") else {}
+            ctx = json.loads(business_context) if business_context.startswith("{") else {}
             customer_name = ctx.get("name", "Customer")
         except:
             pass
 
-        # Buat quotation
         try:
             from app.services.quote_service import generate_quote_from_request
             quote = await generate_quote_from_request(
