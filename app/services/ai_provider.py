@@ -13,7 +13,7 @@ GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 GROQ_MODEL   = "llama-3.3-70b-versatile"
-GEMINI_MODEL = "gemini-1.0-pro"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 
 async def _call_groq(system_prompt: str, user_message: str) -> str:
