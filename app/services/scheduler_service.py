@@ -75,7 +75,7 @@ async def follow_up_check():
 
 
 async def generate_weekly_report():
-    """Generate laporan mingguan otomatis setiap Senin pagi jam 7"""
+    """Generate laporan mingguan otomatis"""
     try:
         logger.info("[REPORT] Memulai generate laporan mingguan...")
 
@@ -84,11 +84,9 @@ async def generate_weekly_report():
         from app.services.memory_service import get_all_customers
         from app.services.gmail_service import send_email_with_attachment
         from app.routers.chat import send_fcm_notification
-        from datetime import datetime, timedelta
-        import json
+        from datetime import datetime
         import os
 
-        # Kumpulkan semua data
         briefing = await generate_briefing()
         tasks_data = await extract_tasks()
         wa_messages = get_wa_messages(limit=50)
@@ -107,7 +105,6 @@ async def generate_weekly_report():
         total_wa = len(wa_messages)
         replied_wa = len([m for m in wa_messages if m.get("replied")])
 
-        # Generate PDF report
         pdf_path = await _generate_report_pdf(
             briefing=briefing,
             tasks=tasks,
@@ -122,7 +119,6 @@ async def generate_weekly_report():
             high_priority=high_priority,
         )
 
-        # Kirim ke email bos
         boss_email = os.getenv("BOSS_EMAIL", "")
         if boss_email and pdf_path:
             week = datetime.now().strftime("%d %B %Y")
@@ -131,7 +127,7 @@ async def generate_weekly_report():
                 subject=f"📊 Laporan Mingguan Orion AI — {week}",
                 body=f"""Halo,
 
-Terlampir laporan mingguan otomatis dari Orion AI untuk periode minggu ini.
+Terlampir laporan mingguan otomatis dari Orion AI.
 
 Ringkasan:
 - Total email masuk: {total_email}
@@ -149,7 +145,6 @@ Orion AI 🤖""",
             )
             logger.info(f"[REPORT] Laporan terkirim ke {boss_email}")
 
-        # Notif ke HP
         await send_fcm_notification(
             title="📊 Laporan Mingguan Siap!",
             body=f"Email: {total_email} | WA: {total_wa} | Task: {len(done_tasks)} selesai",
@@ -165,19 +160,18 @@ async def _generate_report_pdf(
     urgent_count, total_email, total_wa, replied_wa,
     done_tasks, pending_tasks, high_priority
 ) -> str:
-    """Generate PDF laporan mingguan"""
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import cm
         from reportlab.lib import colors
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+        from reportlab.lib.enums import TA_CENTER
         from datetime import datetime
         import os
 
         os.makedirs("/tmp/reports", exist_ok=True)
-        filename = f"/tmp/reports/laporan_{datetime.now().strftime('%Y%m%d')}.pdf"
+        filename = f"/tmp/reports/laporan_{datetime.now().strftime('%Y%m%d%H%M')}.pdf"
 
         doc = SimpleDocTemplate(filename, pagesize=A4,
             rightMargin=2*cm, leftMargin=2*cm,
@@ -193,19 +187,18 @@ async def _generate_report_pdf(
 
         story = []
 
-        # ── Header ──
         story.append(Paragraph(
-            f"<font size='22' color='#1A3A8F'><b>📊 LAPORAN MINGGUAN</b></font>",
+            "<font size='22' color='#1A3A8F'><b>📊 LAPORAN MINGGUAN</b></font>",
             ParagraphStyle("center", alignment=TA_CENTER)
         ))
         story.append(Paragraph(
-            f"<font size='12' color='#6B7280'>Orion AI Execution System • {datetime.now().strftime('%d %B %Y')}</font>",
+            f"<font size='12' color='#6B7280'>Orion AI Execution System • {datetime.now().strftime('%d %B %Y %H:%M')}</font>",
             ParagraphStyle("center", alignment=TA_CENTER)
         ))
         story.append(HRFlowable(width="100%", thickness=2, color=primary, spaceAfter=16))
 
-        # ── Summary Cards ──
-        story.append(Paragraph("<b>📈 RINGKASAN MINGGU INI</b>",
+        # Summary
+        story.append(Paragraph("<b>📈 RINGKASAN</b>",
             ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
 
         summary_data = [
@@ -232,7 +225,7 @@ async def _generate_report_pdf(
         story.append(summary_table)
         story.append(Spacer(1, 0.5*cm))
 
-        # ── Email Section ──
+        # Email
         story.append(Paragraph("<b>📧 ANALISA EMAIL</b>",
             ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
 
@@ -256,9 +249,9 @@ async def _generate_report_pdf(
         story.append(email_table)
         story.append(Spacer(1, 0.5*cm))
 
-        # ── WA Section ──
+        # WA
         story.append(Paragraph("<b>💬 ANALISA WHATSAPP</b>",
-            ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
+            ParagraphStyle("h2", fontSize=13, textColor=success, spaceAfter=8)))
 
         wa_rate = int((replied_wa/total_wa*100)) if total_wa > 0 else 0
         wa_data = [
@@ -282,7 +275,7 @@ async def _generate_report_pdf(
         story.append(wa_table)
         story.append(Spacer(1, 0.5*cm))
 
-        # ── Task Section ──
+        # Task prioritas tinggi
         if high_priority:
             story.append(Paragraph("<b>⚠️ TASK PRIORITAS TINGGI</b>",
                 ParagraphStyle("h2", fontSize=13, textColor=danger, spaceAfter=8)))
@@ -309,7 +302,7 @@ async def _generate_report_pdf(
             story.append(task_table)
             story.append(Spacer(1, 0.5*cm))
 
-        # ── Customer Aktif ──
+        # Customer aktif
         if customers:
             story.append(Paragraph("<b>👥 CUSTOMER AKTIF</b>",
                 ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
@@ -335,7 +328,7 @@ async def _generate_report_pdf(
             story.append(cust_table)
             story.append(Spacer(1, 0.5*cm))
 
-        # ── Footer ──
+        # Footer
         story.append(HRFlowable(width="100%", thickness=0.5, color=gray, spaceAfter=6))
         story.append(Paragraph(
             f"<font size='9' color='#6B7280'>Laporan ini dibuat otomatis oleh Orion AI • {datetime.now().strftime('%d/%m/%Y %H:%M')} WIB</font>",
@@ -343,7 +336,7 @@ async def _generate_report_pdf(
         ))
 
         doc.build(story)
-        logger.info(f"[REPORT] PDF berhasil dibuat: {filename}")
+        logger.info(f"[REPORT] PDF berhasil: {filename}")
         return filename
 
     except Exception as e:
@@ -369,16 +362,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: Laporan mingguan setiap Senin jam 07:00 WIB (UTC+7 = 00:00 UTC)
+        # Job 3: TEST — laporan tiap 2 menit
         scheduler.add_job(
             generate_weekly_report,
-            trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
+            trigger=IntervalTrigger(minutes=2),
             id="weekly_report",
             replace_existing=True,
         )
 
         scheduler.start()
-        logger.info("[SCHEDULER] Semua job dimulai (email: 30 menit, follow up: 1 jam, report: Senin 07:00)")
+        logger.info("[SCHEDULER] Semua job dimulai (email: 30 menit, follow up: 1 jam, report: 2 menit TEST)")
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
