@@ -8,12 +8,12 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-AI_PROVIDER    = os.getenv("AI_PROVIDER", "groq")
+AI_PROVIDER    = os.getenv("AI_PROVIDER", "groq").strip()
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 GROQ_MODEL   = "llama-3.3-70b-versatile"
-GEMINI_MODEL = "gemini-1.5-flash-latest"  # ← FIXED! gemini-pro sudah deprecated
+GEMINI_MODEL = "gemini-2.0-flash"
 
 
 async def _call_groq(system_prompt: str, user_message: str) -> str:
@@ -34,9 +34,9 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY tidak ada di .env")
 
-    # Gemini 1.5 Flash — gratis, cepat, limit tinggi
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    
+    # Pakai v1 bukan v1beta
+    url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+
     payload = {
         "contents": [
             {
@@ -55,34 +55,32 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
 
     async with httpx.AsyncClient(timeout=30) as client:
         res = await client.post(url, json=payload)
-        
+
         if res.status_code != 200:
             error_text = res.text
             logger.error(f"[GEMINI] HTTP {res.status_code}: {error_text}")
             raise ValueError(f"Gemini HTTP {res.status_code}: {error_text}")
-        
+
         data = res.json()
-        
-        # Cek candidates ada
+
         candidates = data.get("candidates", [])
         if not candidates:
             raise ValueError(f"Gemini tidak return candidates: {data}")
-        
-        # Cek finish reason
+
         finish_reason = candidates[0].get("finishReason", "")
         if finish_reason == "SAFETY":
             raise ValueError("Gemini blocked by safety filter")
-        
+
         content = candidates[0].get("content", {})
         parts = content.get("parts", [])
         if not parts:
             raise ValueError(f"Gemini tidak return parts: {data}")
-        
+
         return parts[0].get("text", "")
 
 
 async def call_llm(system_prompt: str, user_message: str) -> str:
-    provider = AI_PROVIDER.lower()
+    provider = AI_PROVIDER.strip().lower()
 
     try:
         if provider == "groq":
@@ -110,7 +108,7 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
         # Auto fallback ke Gemini
         if provider != "gemini" and GEMINI_API_KEY:
             try:
-                logger.info("[LLM] Fallback ke Gemini 1.5 Flash...")
+                logger.info("[LLM] Fallback ke Gemini 2.0 Flash...")
                 result = await _call_gemini(system_prompt, user_message)
                 logger.info("[LLM] Gemini berhasil!")
                 return result
