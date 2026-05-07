@@ -13,7 +13,7 @@ GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 GROQ_MODEL   = "llama-3.3-70b-versatile"
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-1.5-flash-001"
 
 
 async def _call_groq(system_prompt: str, user_message: str) -> str:
@@ -32,17 +32,15 @@ async def _call_groq(system_prompt: str, user_message: str) -> str:
 async def _call_gemini(system_prompt: str, user_message: str) -> str:
     import httpx
     if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY tidak ada di .env")
+        raise ValueError("GEMINI_API_KEY tidak ada")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
     payload = {
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {"text": f"{system_prompt}\n\n{user_message}"}
-                ]
+                "parts": [{"text": f"{system_prompt}\n\n{user_message}"}]
             }
         ],
         "generationConfig": {
@@ -56,12 +54,10 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
         res = await client.post(url, json=payload)
 
         if res.status_code != 200:
-            error_text = res.text
-            logger.error(f"[GEMINI] HTTP {res.status_code}: {error_text}")
-            raise ValueError(f"Gemini HTTP {res.status_code}: {error_text}")
+            logger.error(f"[GEMINI] HTTP {res.status_code}: {res.text}")
+            raise ValueError(f"Gemini HTTP {res.status_code}: {res.text}")
 
         data = res.json()
-
         candidates = data.get("candidates", [])
         if not candidates:
             raise ValueError(f"Gemini tidak return candidates: {data}")
@@ -70,8 +66,7 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
         if finish_reason == "SAFETY":
             raise ValueError("Gemini blocked by safety filter")
 
-        content = candidates[0].get("content", {})
-        parts = content.get("parts", [])
+        parts = candidates[0].get("content", {}).get("parts", [])
         if not parts:
             raise ValueError(f"Gemini tidak return parts: {data}")
 
@@ -89,7 +84,7 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
             logger.info("[LLM] Using Gemini")
             return await _call_gemini(system_prompt, user_message)
         else:
-            logger.warning(f"[LLM] Provider '{provider}' tidak dikenal, fallback ke Groq")
+            logger.warning(f"[LLM] Provider '{provider}' tidak dikenal, pakai Groq")
             return await _call_groq(system_prompt, user_message)
 
     except Exception as primary_error:
@@ -100,29 +95,23 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
         ])
 
         if is_rate_limit:
-            logger.warning(f"[LLM] {provider.upper()} rate limit! Auto fallback ke Gemini...")
+            logger.warning(f"[LLM] {provider.upper()} rate limit! Fallback ke Gemini...")
         else:
             logger.error(f"[LLM] {provider.upper()} error: {primary_error}")
 
         if provider != "gemini" and GEMINI_API_KEY:
             try:
-                logger.info("[LLM] Fallback ke Gemini 1.5 Flash...")
+                logger.info("[LLM] Fallback ke Gemini...")
                 result = await _call_gemini(system_prompt, user_message)
                 logger.info("[LLM] Gemini berhasil!")
                 return result
             except Exception as gemini_error:
-                logger.error(f"[LLM] Gemini juga error: {gemini_error}")
+                logger.error(f"[LLM] Gemini error: {gemini_error}")
                 raise RuntimeError(
-                    f"Semua LLM provider gagal. "
-                    f"Groq: {primary_error}. "
-                    f"Gemini: {gemini_error}"
+                    f"Semua LLM gagal. Groq: {primary_error}. Gemini: {gemini_error}"
                 )
 
-        raise RuntimeError(
-            f"Semua LLM provider gagal. "
-            f"Primary ({provider}): {primary_error}. "
-            f"Cek API key dan quota di .env"
-        )
+        raise RuntimeError(f"LLM gagal. {provider}: {primary_error}")
 
 
 def parse_json_response(ai_response: str):
