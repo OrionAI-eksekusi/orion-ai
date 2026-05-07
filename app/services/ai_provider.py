@@ -13,7 +13,7 @@ GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 GROQ_MODEL   = "llama-3.3-70b-versatile"
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 
 async def _call_groq(system_prompt: str, user_message: str) -> str:
@@ -34,8 +34,7 @@ async def _call_gemini(system_prompt: str, user_message: str) -> str:
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY tidak ada di .env")
 
-    # Pakai v1 bukan v1beta
-    url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
     payload = {
         "contents": [
@@ -105,10 +104,9 @@ async def call_llm(system_prompt: str, user_message: str) -> str:
         else:
             logger.error(f"[LLM] {provider.upper()} error: {primary_error}")
 
-        # Auto fallback ke Gemini
         if provider != "gemini" and GEMINI_API_KEY:
             try:
-                logger.info("[LLM] Fallback ke Gemini 2.0 Flash...")
+                logger.info("[LLM] Fallback ke Gemini 1.5 Flash...")
                 result = await _call_gemini(system_prompt, user_message)
                 logger.info("[LLM] Gemini berhasil!")
                 return result
