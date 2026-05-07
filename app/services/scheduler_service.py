@@ -6,33 +6,53 @@ import logging
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
+
 async def proactive_check():
-    """Cek email urgent tiap 30 menit"""
+    """Cek email baru tanpa AI — hemat token!"""
     try:
-        logger.info("[PROACTIVE] Memulai pengecekan email otomatis...")
-        from app.services.ai_service import generate_briefing
+        logger.info("[PROACTIVE] Cek email baru...")
+        from app.services.gmail_service import get_gmail_service
         from app.routers.chat import send_fcm_notification, get_fcm_token
 
         token = get_fcm_token()
         if not token:
-            logger.info("[PROACTIVE] Tidak ada FCM token, skip")
             return
 
-        result = await generate_briefing()
+        # Cek email tanpa AI — langsung dari Gmail API
+        service = get_gmail_service()
+        results = service.users().messages().list(
+            userId='me',
+            maxResults=5,
+            labelIds=['INBOX', 'UNREAD'],
+            q='is:unread newer_than:1h'
+        ).execute()
 
-        if result and result.get("urgent"):
-            urgent = result["urgent"]
-            count = len(urgent)
-            if count > 0:
-                first = urgent[0]
-                sender = first.get("from", "Unknown")
-                subject = first.get("subject", "")
-                await send_fcm_notification(
-                    title=f"📧 {count} Email Urgent!",
-                    body=f"{sender}: {subject[:60]}",
-                    data={"type": "email"}
-                )
-                logger.info(f"[PROACTIVE] Notif terkirim: {count} email urgent")
+        messages = results.get('messages', [])
+        if not messages:
+            logger.info("[PROACTIVE] Tidak ada email baru")
+            return
+
+        count = len(messages)
+
+        # Ambil detail email pertama
+        detail = service.users().messages().get(
+            userId='me', id=messages[0]['id'], format='metadata',
+            metadataHeaders=['From', 'Subject']
+        ).execute()
+
+        headers = detail['payload']['headers']
+        sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+
+        # Bersihkan nama pengirim
+        sender_clean = sender.split('<')[0].strip().replace('"', '')
+
+        await send_fcm_notification(
+            title=f"📧 {count} Email Baru!",
+            body=f"{sender_clean}: {subject[:60]}",
+            data={"type": "email"}
+        )
+        logger.info(f"[PROACTIVE] Notif terkirim: {count} email baru")
 
     except Exception as e:
         logger.error(f"[PROACTIVE ERROR] {e}")
@@ -75,7 +95,7 @@ async def follow_up_check():
 
 
 async def generate_weekly_report():
-    """Generate laporan mingguan otomatis"""
+    """Generate laporan mingguan otomatis setiap Senin jam 07.00 WIB"""
     try:
         logger.info("[REPORT] Memulai generate laporan mingguan...")
 
@@ -93,9 +113,7 @@ async def generate_weekly_report():
         customers = get_all_customers()
 
         urgent_count = len(briefing.get("urgent", []))
-        nanti_count = len(briefing.get("bisa_nanti", []))
-        arsip_count = len(briefing.get("arsip", []))
-        total_email = urgent_count + nanti_count + arsip_count
+        total_email = urgent_count + len(briefing.get("bisa_nanti", [])) + len(briefing.get("arsip", []))
 
         tasks = tasks_data.get("tasks", [])
         done_tasks = [t for t in tasks if t.get("done")]
@@ -177,7 +195,6 @@ async def _generate_report_pdf(
             rightMargin=2*cm, leftMargin=2*cm,
             topMargin=2*cm, bottomMargin=2*cm)
 
-        styles = getSampleStyleSheet()
         primary = colors.HexColor("#1A3A8F")
         success = colors.HexColor("#2D8B4E")
         danger = colors.HexColor("#FF4444")
@@ -346,7 +363,7 @@ async def _generate_report_pdf(
 
 def start_scheduler():
     try:
-        # Job 1: Proactive email check tiap 30 menit
+        # Job 1: Proactive email check tiap 30 menit — HEMAT TOKEN!
         scheduler.add_job(
             proactive_check,
             trigger=IntervalTrigger(minutes=30),
@@ -362,16 +379,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: TEST — laporan tiap 2 menit
+        # Job 3: Laporan mingguan setiap Senin jam 07.00 WIB (UTC = 00.00)
         scheduler.add_job(
             generate_weekly_report,
-            trigger=IntervalTrigger(minutes=2),
+            trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
             id="weekly_report",
             replace_existing=True,
         )
 
         scheduler.start()
-        logger.info("[SCHEDULER] Semua job dimulai (email: 30 menit, follow up: 1 jam, report: 2 menit TEST)")
+        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit hemat, follow up: 1 jam, report: Senin 07.00)")
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
