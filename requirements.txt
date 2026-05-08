@@ -12,3 +12,4 @@ httpx
 firebase-admin
 apscheduler
 reportlab
+groq
