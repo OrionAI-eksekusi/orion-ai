@@ -21,11 +21,12 @@ def init_db():
             received_at TEXT NOT NULL,
             replied INTEGER DEFAULT 0,
             follow_up_sent INTEGER DEFAULT 0,
+            follow_up_count INTEGER DEFAULT 0,
             received_timestamp TEXT NOT NULL DEFAULT (datetime('now'))
         )
     ''')
 
-    # ── Tabel User Profiles (untuk multi user) ──
+    # ── Tabel User Profiles ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +45,7 @@ def init_db():
         )
     ''')
 
-    # ── Tabel FCM Tokens per user ──
+    # ── Tabel FCM Tokens ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS fcm_tokens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,9 +55,44 @@ def init_db():
         )
     ''')
 
-    # Migration — tambah kolom baru kalau belum ada
+    # ── Tabel Personal Brain ──
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS personal_brain (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT 'default',
+            entity_name TEXT NOT NULL,
+            entity_type TEXT DEFAULT 'contact',
+            notes TEXT DEFAULT '',
+            details TEXT DEFAULT '{}',
+            follow_up_date TEXT DEFAULT '',
+            follow_up_done INTEGER DEFAULT 0,
+            follow_up_count INTEGER DEFAULT 0,
+            last_contact TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    ''')
+
+    # ── Tabel Follow Up Tracker ──
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS follow_up_tracker (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT 'default',
+            contact_phone TEXT DEFAULT '',
+            contact_email TEXT DEFAULT '',
+            contact_name TEXT DEFAULT '',
+            channel TEXT DEFAULT 'wa',
+            follow_up_count INTEGER DEFAULT 0,
+            last_follow_up TEXT DEFAULT '',
+            status TEXT DEFAULT 'pending',
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    ''')
+
+    # Migration
     migrations = [
         "ALTER TABLE wa_messages ADD COLUMN follow_up_sent INTEGER DEFAULT 0",
+        "ALTER TABLE wa_messages ADD COLUMN follow_up_count INTEGER DEFAULT 0",
         "ALTER TABLE wa_messages ADD COLUMN received_timestamp TEXT",
         "ALTER TABLE wa_messages ADD COLUMN user_id TEXT DEFAULT 'default'",
     ]
@@ -78,7 +114,6 @@ def init_db():
 # ── User Profile Functions ─────────────────────────────
 def save_user_profile(user_id: str, name: str, email: str, phone: str,
                        city: str = "Jakarta", briefing_hour: int = 6):
-    """Simpan atau update profil user"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -97,7 +132,6 @@ def save_user_profile(user_id: str, name: str, email: str, phone: str,
 
 
 def get_user_profile(user_id: str) -> dict:
-    """Ambil profil user berdasarkan user_id"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -116,7 +150,6 @@ def get_user_profile(user_id: str) -> dict:
 
 
 def get_all_active_users() -> list:
-    """Ambil semua user aktif — untuk scheduler briefing"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -133,7 +166,6 @@ def get_all_active_users() -> list:
 
 
 def update_user_fcm_token(user_id: str, fcm_token: str):
-    """Update FCM token user"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -145,7 +177,6 @@ def update_user_fcm_token(user_id: str, fcm_token: str):
 
 
 def update_user_gmail_token(user_id: str, gmail_token: str):
-    """Update Gmail token user"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -192,39 +223,177 @@ def mark_replied(phone: str, user_id: str = 'default'):
 
 
 def get_unreplied_messages(hours: int = 24, user_id: str = 'default'):
-    """Ambil pesan yang belum dibalas lebih dari X jam"""
+    """Ambil pesan belum dibalas — max follow up 2x"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        SELECT DISTINCT phone, message, received_timestamp
+        SELECT DISTINCT phone, message, received_timestamp, follow_up_count
         FROM wa_messages
         WHERE user_id = ?
         AND replied = 0
-        AND follow_up_sent = 0
+        AND follow_up_count < 2
         AND received_timestamp IS NOT NULL
         AND (julianday('now') - julianday(received_timestamp)) * 24 >= ?
         ORDER BY received_timestamp ASC
     ''', (user_id, hours))
     rows = c.fetchall()
     conn.close()
-    return [{"phone": r[0], "message": r[1], "received_at": r[2]} for r in rows]
+    return [{"phone": r[0], "message": r[1], "received_at": r[2], "follow_up_count": r[3]} for r in rows]
 
 
 def mark_follow_up_sent(phone: str, user_id: str = 'default'):
-    """Tandai bahwa follow up sudah dikirim"""
+    """Tandai follow up terkirim — increment counter"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute(
-        "UPDATE wa_messages SET follow_up_sent=1 WHERE phone=? AND user_id=? AND replied=0",
-        (phone, user_id)
-    )
+    c.execute('''
+        UPDATE wa_messages 
+        SET follow_up_sent=1, 
+            follow_up_count=follow_up_count+1
+        WHERE phone=? AND user_id=? AND replied=0
+    ''', (phone, user_id))
     conn.commit()
     conn.close()
 
 
+def get_follow_up_count(phone: str, user_id: str = 'default') -> int:
+    """Cek sudah berapa kali follow up ke nomor ini"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            SELECT MAX(follow_up_count) FROM wa_messages
+            WHERE phone=? AND user_id=?
+        ''', (phone, user_id))
+        row = c.fetchone()
+        conn.close()
+        return row[0] or 0
+    except:
+        return 0
+
+
+# ── Personal Brain Functions ───────────────────────────
+def save_brain_entry(user_id: str, entity_name: str, notes: str,
+                      entity_type: str = 'contact', details: dict = {},
+                      follow_up_date: str = ''):
+    """Simpan atau update entri di Personal Brain"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO personal_brain 
+            (user_id, entity_name, entity_type, notes, details, follow_up_date, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING
+    ''', (user_id, entity_name, entity_type, notes,
+          json_dumps(details), follow_up_date, datetime.now().isoformat()))
+
+    # Kalau sudah ada → update
+    c.execute('''
+        UPDATE personal_brain SET
+            notes = notes || char(10) || ?,
+            details = ?,
+            follow_up_date = CASE WHEN ? != '' THEN ? ELSE follow_up_date END,
+            updated_at = ?
+        WHERE user_id = ? AND entity_name = ? AND id != last_insert_rowid()
+    ''', (notes, json_dumps(details), follow_up_date, follow_up_date,
+          datetime.now().isoformat(), user_id, entity_name))
+
+    conn.commit()
+    conn.close()
+
+
+def get_brain_entry(user_id: str, entity_name: str) -> dict:
+    """Cari entri di Personal Brain"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT entity_name, entity_type, notes, details, 
+               follow_up_date, follow_up_count, last_contact, created_at
+        FROM personal_brain
+        WHERE user_id = ? AND entity_name LIKE ?
+        ORDER BY updated_at DESC LIMIT 1
+    ''', (user_id, f'%{entity_name}%'))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return {}
+    return {
+        "name": row[0], "type": row[1], "notes": row[2],
+        "details": row[3], "follow_up_date": row[4],
+        "follow_up_count": row[5], "last_contact": row[6],
+        "created_at": row[7]
+    }
+
+
+def get_all_brain_entries(user_id: str) -> list:
+    """Ambil semua entri Personal Brain"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT entity_name, entity_type, notes, follow_up_date, 
+               follow_up_done, last_contact, updated_at
+        FROM personal_brain
+        WHERE user_id = ?
+        ORDER BY updated_at DESC
+    ''', (user_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [{
+        "name": r[0], "type": r[1], "notes": r[2],
+        "follow_up_date": r[3], "follow_up_done": bool(r[4]),
+        "last_contact": r[5], "updated_at": r[6]
+    } for r in rows]
+
+
+def get_pending_follow_ups(user_id: str) -> list:
+    """Ambil follow up yang sudah jatuh tempo"""
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
+        FROM personal_brain
+        WHERE user_id = ?
+        AND follow_up_done = 0
+        AND follow_up_date != ''
+        AND follow_up_date <= ?
+        AND follow_up_count < 2
+        ORDER BY follow_up_date ASC
+    ''', (user_id, today))
+    rows = c.fetchall()
+    conn.close()
+    return [{
+        "name": r[0], "type": r[1], "notes": r[2],
+        "follow_up_date": r[3], "follow_up_count": r[4]
+    } for r in rows]
+
+
+def mark_brain_follow_up_done(user_id: str, entity_name: str):
+    """Tandai follow up selesai"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        UPDATE personal_brain SET
+            follow_up_done = 1,
+            follow_up_count = follow_up_count + 1,
+            last_contact = ?,
+            updated_at = ?
+        WHERE user_id = ? AND entity_name = ?
+    ''', (datetime.now().isoformat(), datetime.now().isoformat(),
+          user_id, entity_name))
+    conn.commit()
+    conn.close()
+
+
+def json_dumps(data: dict) -> str:
+    try:
+        import json
+        return json.dumps(data, ensure_ascii=False)
+    except:
+        return '{}'
+
+
 # ── FCM Token Functions ────────────────────────────────
 def save_fcm_token_db(token: str, user_id: str = 'default'):
-    """Simpan FCM token per user"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -236,7 +405,6 @@ def save_fcm_token_db(token: str, user_id: str = 'default'):
         "INSERT OR REPLACE INTO fcm_tokens (user_id, token) VALUES (?, ?)",
         (user_id, token)
     )
-    # Update juga di user_profiles
     c.execute(
         "UPDATE user_profiles SET fcm_token=? WHERE user_id=?",
         (token, user_id)
@@ -246,7 +414,6 @@ def save_fcm_token_db(token: str, user_id: str = 'default'):
 
 
 def get_fcm_token_db(user_id: str = 'default') -> str:
-    """Ambil FCM token per user"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
