@@ -1,16 +1,24 @@
-from fastapi import APIRouter, Request, BackgroundTasks
+from fastapi import APIRouter, Request, BackgroundTasks, Header
 from pydantic import BaseModel
 from app.services.ai_service import process_command, generate_briefing, extract_tasks, generate_wa_reply
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message, broadcast_whatsapp
-from app.services.database_service import init_db, get_wa_messages, mark_replied
+from app.services.database_service import (
+    init_db, get_wa_messages, mark_replied,
+    save_user_profile, get_user_profile, get_all_active_users,
+    save_fcm_token_db, get_fcm_token_db, update_user_fcm_token
+)
 from app.services.calendar_service import get_upcoming_events
-from app.services.memory_service import init_memory_db, get_customer_memory, update_customer_memory, get_all_customers, build_customer_context
+from app.services.memory_service import (
+    init_memory_db, get_customer_memory, update_customer_memory,
+    get_all_customers, build_customer_context
+)
 import httpx
 import json
 import os
 import sqlite3
 import base64
+from typing import Optional
 
 init_db()
 init_memory_db()
@@ -19,13 +27,17 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 WA_GATEWAY_URL = os.getenv("WA_GATEWAY_URL", "http://localhost:3000")
 DB_PATH = os.getenv("DB_PATH", "orion.db")
 
+
+# ── Models ─────────────────────────────────────────────────
 class CommandRequest(BaseModel):
     message: str
+    user_id: str = "default"
 
 class SendEmailRequest(BaseModel):
     to: str
     subject: str
     body: str
+    user_id: str = "default"
 
 class SendWhatsAppRequest(BaseModel):
     phone: str
@@ -46,6 +58,7 @@ class SaveProfileRequest(BaseModel):
     contact: dict
     working_hours: str
     location: str
+    user_id: str = "default"
 
 class UpdateMemoryRequest(BaseModel):
     phone: str
@@ -54,36 +67,28 @@ class UpdateMemoryRequest(BaseModel):
 
 class SaveFcmTokenRequest(BaseModel):
     token: str
+    user_id: str = "default"
 
 class BroadcastRequest(BaseModel):
     message: str
-    target: str = "all"  # "all" atau list phone tertentu
+    target: str = "all"
+    user_id: str = "default"
+
+class SaveUserProfileRequest(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    phone: str
+    city: str = "Jakarta"
+    briefing_hour: int = 6
+
 
 # ── FCM Helper ─────────────────────────────────────────────
-def save_fcm_token_db(token: str):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS fcm_tokens 
-                     (id INTEGER PRIMARY KEY, token TEXT UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)''')
-        c.execute("INSERT OR REPLACE INTO fcm_tokens (id, token) VALUES (1, ?)", (token,))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"[FCM DB ERROR] {e}")
+def get_fcm_token(user_id: str = "default") -> str:
+    return get_fcm_token_db(user_id)
 
-def get_fcm_token() -> str:
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT token FROM fcm_tokens WHERE id = 1")
-        row = c.fetchone()
-        conn.close()
-        return row[0] if row else ""
-    except:
-        return ""
-
-async def send_fcm_notification(title: str, body: str, data: dict = {}):
+async def send_fcm_notification(title: str, body: str, data: dict = {},
+                                 user_id: str = "default"):
     try:
         import firebase_admin
         from firebase_admin import credentials, messaging
@@ -97,9 +102,9 @@ async def send_fcm_notification(title: str, body: str, data: dict = {}):
             cred = credentials.Certificate(sa_json)
             firebase_admin.initialize_app(cred)
 
-        token = get_fcm_token()
+        token = get_fcm_token(user_id)
         if not token:
-            print("[FCM] Token tidak ada")
+            print(f"[FCM] Token tidak ada untuk user {user_id}")
             return
 
         message = messaging.Message(
@@ -115,63 +120,106 @@ async def send_fcm_notification(title: str, body: str, data: dict = {}):
             ),
         )
         response = messaging.send(message)
-        print(f"[FCM] Notif terkirim: {response}")
+        print(f"[FCM] Notif terkirim ke {user_id}: {response}")
     except Exception as e:
         print(f"[FCM ERROR] {e}")
 
+
+async def send_fcm_to_all_users(title: str, body: str, data: dict = {}):
+    """Kirim notif ke semua user aktif"""
+    users = get_all_active_users()
+    for user in users:
+        if user.get("fcm_token"):
+            await send_fcm_notification(title, body, data, user["user_id"])
+
+
 # ── Broadcast Helper ───────────────────────────────────────
-async def _run_broadcast(phones: list, message: str):
-    """Jalankan broadcast di background"""
+async def _run_broadcast(phones: list, message: str, user_id: str = "default"):
     try:
         print(f"[BROADCAST] Mulai kirim ke {len(phones)} nomor...")
         result = broadcast_whatsapp(phones, message, delay=2.0)
         print(f"[BROADCAST] Selesai: {result['success']} berhasil, {result['failed']} gagal")
-        
-        # Notif ke HP setelah selesai
         await send_fcm_notification(
             title="📢 Broadcast Selesai!",
             body=f"Terkirim ke {result['success']}/{result['total']} customer",
-            data={"type": "broadcast"}
+            data={"type": "broadcast"},
+            user_id=user_id
         )
     except Exception as e:
         print(f"[BROADCAST ERROR] {e}")
 
+
 # ── Endpoints ──────────────────────────────────────────────
+
 @router.post("/save-fcm-token")
 async def save_fcm_token(request: SaveFcmTokenRequest):
     try:
-        save_fcm_token_db(request.token)
+        save_fcm_token_db(request.token, request.user_id)
+        update_user_fcm_token(request.user_id, request.token)
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/save-user-profile")
+async def save_user_profile_endpoint(request: SaveUserProfileRequest):
+    """Simpan profil user saat pertama kali login"""
+    try:
+        save_user_profile(
+            user_id=request.user_id,
+            name=request.name,
+            email=request.email,
+            phone=request.phone,
+            city=request.city,
+            briefing_hour=request.briefing_hour
+        )
+        return {"status": "success", "message": f"Profil {request.name} tersimpan"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/user-profile/{user_id}")
+async def get_user_profile_endpoint(user_id: str):
+    """Ambil profil user"""
+    try:
+        profile = get_user_profile(user_id)
+        return {"status": "success", "profile": profile}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 
 @router.post("/")
 async def chat(request: CommandRequest):
     result = await process_command(request.message)
     return result
 
+
 @router.get("/emails")
 async def read_emails():
     emails = get_recent_emails()
     return {"status": "success", "emails": emails}
+
 
 @router.post("/send-email")
 async def send_email_endpoint(request: SendEmailRequest):
     result = send_email(request.to, request.subject, request.body)
     return result
 
+
 @router.post("/send-whatsapp")
 async def send_whatsapp_endpoint(request: SendWhatsAppRequest):
     result = send_whatsapp(request.phone, request.message)
     return result
 
+
 @router.get("/whatsapp-messages")
-async def get_whatsapp_messages():
-    messages = get_wa_messages(limit=10)
+async def get_whatsapp_messages(user_id: str = "default"):
+    messages = get_wa_messages(limit=10, user_id=user_id)
     return {"status": "success", "messages": messages}
 
+
 @router.get("/briefing")
-async def get_briefing():
+async def get_briefing(user_id: str = "default"):
     result = await generate_briefing()
     try:
         if result and result.get("urgent") and len(result["urgent"]) > 0:
@@ -179,14 +227,16 @@ async def get_briefing():
             await send_fcm_notification(
                 title="📧 Email Urgent!",
                 body=f"Ada {urgent_count} email urgent yang perlu dibalas",
-                data={"type": "email"}
+                data={"type": "email"},
+                user_id=user_id
             )
     except Exception as e:
         print(f"[FCM BRIEFING ERROR] {e}")
     return {"status": "success", "briefing": result}
 
+
 @router.get("/tasks")
-async def get_tasks():
+async def get_tasks(user_id: str = "default"):
     result = await extract_tasks()
     try:
         if result and result.get("tasks") and len(result["tasks"]) > 0:
@@ -195,11 +245,13 @@ async def get_tasks():
                 await send_fcm_notification(
                     title="✅ Task Urgent!",
                     body=f"Ada {len(high_priority)} task prioritas tinggi",
-                    data={"type": "task"}
+                    data={"type": "task"},
+                    user_id=user_id
                 )
     except Exception as e:
         print(f"[FCM TASKS ERROR] {e}")
     return {"status": "success", "tasks": result}
+
 
 @router.get("/calendar-events")
 async def get_calendar_events():
@@ -209,11 +261,13 @@ async def get_calendar_events():
     except Exception as e:
         return {"status": "error", "events": [], "message": str(e)}
 
+
 @router.get("/customer-memory/{phone}")
 async def get_memory(phone: str):
     context = build_customer_context(phone)
     memory = get_customer_memory(phone)
     return {"status": "success", "context": context, "memory": memory}
+
 
 @router.post("/update-memory")
 async def update_memory(request: UpdateMemoryRequest):
@@ -223,6 +277,7 @@ async def update_memory(request: UpdateMemoryRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
 @router.get("/customers")
 async def get_customers():
     try:
@@ -231,10 +286,12 @@ async def get_customers():
     except Exception as e:
         return {"status": "error", "customers": [], "message": str(e)}
 
+
 @router.post("/wa-reply")
 async def wa_reply(request: WAReplyRequest):
     result = await generate_wa_reply(request.message, request.business_context)
     return {"status": "success", "reply": result}
+
 
 @router.get("/wa-qr")
 async def get_wa_qr():
@@ -246,6 +303,7 @@ async def get_wa_qr():
     except:
         return {"status": "error", "qr_url": ""}
 
+
 @router.get("/wa-status")
 async def get_wa_status():
     try:
@@ -256,34 +314,30 @@ async def get_wa_status():
     except:
         return {"connected": False}
 
+
 @router.post("/save-profile")
 async def save_profile(request: SaveProfileRequest):
     try:
-        with open("business_profile.json", "w") as f:
-            json.dump(request.dict(), f, indent=2, ensure_ascii=False)
+        profile_data = request.dict()
+        user_id = profile_data.pop("user_id", "default")
+        os.makedirs("profiles", exist_ok=True)
+        with open(f"profiles/{user_id}_business.json", "w") as f:
+            json.dump(profile_data, f, indent=2, ensure_ascii=False)
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# ── Broadcast Endpoint ─────────────────────────────────────
+
 @router.post("/broadcast")
 async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks):
     try:
-        # Ambil semua customer
         customers = get_all_customers()
-        
         if not customers:
             return {"status": "error", "message": "Tidak ada customer ditemukan"}
-        
-        # Filter yang punya nomor phone
         phones = [c["phone"] for c in customers if c.get("phone")]
-        
         if not phones:
             return {"status": "error", "message": "Tidak ada nomor customer"}
-
-        # Jalankan broadcast di background
-        background_tasks.add_task(_run_broadcast, phones, request.message)
-
+        background_tasks.add_task(_run_broadcast, phones, request.message, request.user_id)
         return {
             "status": "success",
             "message": f"Broadcast dimulai ke {len(phones)} customer",
@@ -291,6 +345,7 @@ async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
 
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
@@ -332,7 +387,8 @@ async def whatsapp_webhook(request: Request):
 
     try:
         sender = phone.replace("@lid", "").replace("@s.whatsapp.net", "")
-        await send_fcm_notification(
+        # Kirim notif ke semua user aktif
+        await send_fcm_to_all_users(
             title=f"💬 WA dari {sender}",
             body=message[:100],
             data={"type": "wa", "phone": phone}
