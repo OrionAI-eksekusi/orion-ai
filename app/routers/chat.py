@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, BackgroundTasks, Header
+from fastapi import APIRouter, Request, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel
 from app.services.ai_service import process_command, generate_briefing, extract_tasks, generate_wa_reply
 from app.services.gmail_service import get_recent_emails, send_email
@@ -18,6 +18,7 @@ import json
 import os
 import sqlite3
 import base64
+import tempfile
 from typing import Optional
 
 init_db()
@@ -126,7 +127,6 @@ async def send_fcm_notification(title: str, body: str, data: dict = {},
 
 
 async def send_fcm_to_all_users(title: str, body: str, data: dict = {}):
-    """Kirim notif ke semua user aktif"""
     users = get_all_active_users()
     for user in users:
         if user.get("fcm_token"):
@@ -163,7 +163,6 @@ async def save_fcm_token(request: SaveFcmTokenRequest):
 
 @router.post("/save-user-profile")
 async def save_user_profile_endpoint(request: SaveUserProfileRequest):
-    """Simpan profil user saat pertama kali login"""
     try:
         save_user_profile(
             user_id=request.user_id,
@@ -180,7 +179,6 @@ async def save_user_profile_endpoint(request: SaveUserProfileRequest):
 
 @router.get("/user-profile/{user_id}")
 async def get_user_profile_endpoint(user_id: str):
-    """Ambil profil user"""
     try:
         profile = get_user_profile(user_id)
         return {"status": "success", "profile": profile}
@@ -347,6 +345,117 @@ async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks
         return {"status": "error", "message": str(e)}
 
 
+# ── Meeting Transcriber Endpoint ───────────────────────────
+@router.post("/transcribe-meeting")
+async def transcribe_meeting(
+    background_tasks: BackgroundTasks,
+    audio: UploadFile = File(...),
+    meeting_title: str = Form(default="Meeting"),
+    participant_emails: str = Form(default=""),
+    language: str = Form(default="id"),
+    user_id: str = Form(default="default"),
+):
+    """
+    Upload audio meeting → transkrip → analisa → kirim notulen via email
+    """
+    try:
+        # Validasi file audio
+        allowed_types = [
+            "audio/mpeg", "audio/mp4", "audio/wav", "audio/webm",
+            "audio/ogg", "audio/flac", "audio/m4a", "video/mp4"
+        ]
+        content_type = audio.content_type or ""
+        filename = audio.filename or "audio.mp3"
+
+        print(f"[MEETING] Upload: {filename} ({content_type})")
+
+        # Simpan audio ke temp file
+        suffix = os.path.splitext(filename)[1] or ".mp3"
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=suffix, dir="/tmp"
+        ) as tmp:
+            content = await audio.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        print(f"[MEETING] File tersimpan: {tmp_path} ({len(content)} bytes)")
+
+        # Parse emails peserta
+        emails_list = []
+        if participant_emails:
+            emails_list = [e.strip() for e in participant_emails.split(",")
+                          if e.strip() and "@" in e.strip()]
+
+        # Proses di background
+        background_tasks.add_task(
+            _process_meeting_background,
+            tmp_path, meeting_title, emails_list, language, user_id
+        )
+
+        return {
+            "status": "success",
+            "message": f"Meeting '{meeting_title}' sedang diproses...",
+            "file_size": len(content),
+            "emails_to_notify": len(emails_list)
+        }
+
+    except Exception as e:
+        print(f"[MEETING UPLOAD ERROR] {e}")
+        return {"status": "error", "message": str(e)}
+
+
+async def _process_meeting_background(
+    audio_path: str,
+    meeting_title: str,
+    participant_emails: list,
+    language: str,
+    user_id: str
+):
+    """Proses meeting di background"""
+    try:
+        from app.services.transcriber_service import process_meeting
+
+        print(f"[MEETING BG] Mulai proses: {meeting_title}")
+        result = await process_meeting(
+            audio_path=audio_path,
+            meeting_title=meeting_title,
+            participant_emails=participant_emails,
+            language=language
+        )
+
+        if result["status"] == "success":
+            # Notif ke HP
+            await send_fcm_notification(
+                title="🎙️ Meeting Selesai Diproses!",
+                body=f"Notulen '{meeting_title}' siap. Terkirim ke {result['emails_sent']} peserta.",
+                data={"type": "meeting", "summary": result["summary"][:200]},
+                user_id=user_id
+            )
+            print(f"[MEETING BG] Selesai! Notif terkirim ke user {user_id}")
+        else:
+            await send_fcm_notification(
+                title="❌ Gagal Proses Meeting",
+                body=result.get("message", "Terjadi kesalahan"),
+                data={"type": "meeting_error"},
+                user_id=user_id
+            )
+
+        # Hapus temp file
+        try:
+            os.remove(audio_path)
+        except:
+            pass
+
+    except Exception as e:
+        print(f"[MEETING BG ERROR] {e}")
+        await send_fcm_notification(
+            title="❌ Gagal Proses Meeting",
+            body=str(e),
+            data={"type": "meeting_error"},
+            user_id=user_id
+        )
+
+
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
     data = await request.json()
@@ -387,7 +496,6 @@ async def whatsapp_webhook(request: Request):
 
     try:
         sender = phone.replace("@lid", "").replace("@s.whatsapp.net", "")
-        # Kirim notif ke semua user aktif
         await send_fcm_to_all_users(
             title=f"💬 WA dari {sender}",
             body=message[:100],
