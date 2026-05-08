@@ -6,7 +6,7 @@ from app.services.ai_provider import call_llm, parse_json_response
 
 load_dotenv()
 
-# ── Detect casual/umum (tidak perlu konfirmasi) ───────────
+# ── Detect casual/umum ────────────────────────────────────
 def is_casual_message(message: str) -> bool:
     casual_keywords = [
         'halo', 'hai', 'hello', 'hi', 'apa kabar', 'selamat',
@@ -19,6 +19,18 @@ def is_casual_message(message: str) -> bool:
     if len(msg_lower.split()) <= 4:
         return True
     return any(kw in msg_lower for kw in casual_keywords)
+
+# ── Detect Personal Brain commands ───────────────────────
+def is_brain_command(message: str) -> bool:
+    keywords = [
+        'catat', 'ingat', 'simpan', 'note', 'remember',
+        'siapa', 'info tentang', 'ceritakan tentang',
+        'follow up', 'followup', 'tindak lanjut',
+        'ingatkan', 'remind', 'jadwalkan follow',
+        'apa yang kamu tahu tentang', 'cari di memory',
+        'daftar kontak', 'semua catatan', 'list kontak'
+    ]
+    return any(kw in message.lower() for kw in keywords)
 
 # ── Detect request quotation ──────────────────────────────
 def is_quote_request(message: str) -> bool:
@@ -42,7 +54,7 @@ def is_send_file_command(message: str) -> bool:
 async def extract_send_file_info(message: str) -> dict:
     system_prompt = """Dari perintah berikut, ekstrak informasi dalam JSON:
 {
-    "file_name": "nama file yang ingin dikirim (tanpa ekstensi jika tidak disebutkan)",
+    "file_name": "nama file yang ingin dikirim",
     "recipient_name": "nama penerima",
     "recipient_email": "email penerima jika disebutkan, kosong jika tidak",
     "message_body": "pesan yang ingin disertakan dalam email",
@@ -62,8 +74,42 @@ Respond HANYA dengan JSON."""
             "subject": "File dari Orion AI"
         }
 
+# ── Extract Brain info dari perintah ─────────────────────
+async def extract_brain_info(message: str) -> dict:
+    """Extract info untuk Personal Brain dari perintah user"""
+    system_prompt = """Dari perintah berikut, ekstrak informasi untuk Personal Brain dalam JSON:
+{
+    "action": "save/query/list/followup",
+    "entity_name": "nama orang/perusahaan/topik yang dimaksud",
+    "entity_type": "contact/investor/customer/supplier/idea/note",
+    "notes": "informasi yang ingin disimpan",
+    "follow_up_date": "tanggal follow up format YYYY-MM-DD jika ada, kosong jika tidak",
+    "query": "kata kunci pencarian jika action=query"
+}
 
-async def process_command(message: str):
+Contoh:
+- "catat Pak Rudi investor dari Jakarta budget 2M" → action=save, entity_name=Pak Rudi
+- "siapa Pak Rudi?" → action=query, query=Pak Rudi
+- "follow up Pak Rudi besok" → action=followup, entity_name=Pak Rudi
+- "daftar semua kontak" → action=list
+
+Respond HANYA dengan JSON."""
+    try:
+        response = await call_llm(system_prompt, message)
+        clean = response.replace('```json', '').replace('```', '').strip()
+        return json.loads(clean)
+    except:
+        return {
+            "action": "query",
+            "entity_name": "",
+            "entity_type": "contact",
+            "notes": message,
+            "follow_up_date": "",
+            "query": message
+        }
+
+
+async def process_command(message: str, user_id: str = "default"):
     email_keywords = ['email', 'balas', 'inbox', 'pesan masuk', 'surat']
     broadcast_keywords = ['broadcast', 'kirim semua', 'blast', 'semua customer', 'semua pelanggan']
     quote_keywords = ['quotation', 'quote', 'penawaran harga', 'buat quotation']
@@ -74,13 +120,118 @@ async def process_command(message: str):
     is_broadcast = any(word in message.lower() for word in broadcast_keywords)
     is_quote = any(word in message.lower() for word in quote_keywords)
     is_file_send = any(word in message.lower() for word in file_keywords)
+    is_brain = is_brain_command(message)
     casual = is_casual_message(message)
 
-    # ── Handle Casual — langsung jawab tanpa konfirmasi ──
+    # ── Handle Personal Brain ─────────────────────────────
+    if is_brain and not is_email_command and not is_broadcast:
+        try:
+            from app.services.memory_service import (
+                save_brain_entry, get_brain_entry,
+                get_all_brain_entries, search_brain
+            )
+
+            brain_info = await extract_brain_info(message)
+            action = brain_info.get("action", "query")
+            entity_name = brain_info.get("entity_name", "")
+            notes = brain_info.get("notes", "")
+            entity_type = brain_info.get("entity_type", "contact")
+            follow_up_date = brain_info.get("follow_up_date", "")
+            query = brain_info.get("query", message)
+
+            if action == "save":
+                save_brain_entry(
+                    user_id=user_id,
+                    entity_name=entity_name,
+                    notes=notes,
+                    entity_type=entity_type,
+                    follow_up_date=follow_up_date
+                )
+                reply = f"✅ Tersimpan di Personal Brain!\n\n📝 **{entity_name}**\n{notes}"
+                if follow_up_date:
+                    reply += f"\n📅 Follow up: {follow_up_date}"
+
+            elif action == "followup":
+                save_brain_entry(
+                    user_id=user_id,
+                    entity_name=entity_name,
+                    notes=f"Follow up dijadwalkan",
+                    follow_up_date=follow_up_date
+                )
+                reply = f"⏰ Follow up untuk **{entity_name}** sudah dijadwalkan!"
+                if follow_up_date:
+                    reply += f"\nTanggal: {follow_up_date}"
+                reply += "\n\nOrion akan mengingatkan kamu! Maksimal 2x follow up."
+
+            elif action == "list":
+                entries = get_all_brain_entries(user_id)
+                if not entries:
+                    reply = "📭 Personal Brain masih kosong. Coba catat sesuatu dulu!"
+                else:
+                    reply = f"🧠 **Personal Brain** ({len(entries)} entri):\n\n"
+                    for e in entries[:10]:
+                        follow_up_info = f" 📅 {e['follow_up_date']}" if e.get('follow_up_date') else ""
+                        done_info = " ✅" if e.get('follow_up_done') else ""
+                        reply += f"• **{e['name']}** ({e['type']}){follow_up_info}{done_info}\n"
+
+            else:
+                # Query — cari di brain
+                results = search_brain(user_id, query)
+                if not results:
+                    # Coba cari langsung
+                    entry = get_brain_entry(user_id, query)
+                    if entry:
+                        results = [entry]
+
+                if results:
+                    r = results[0]
+                    reply = f"🧠 **{r['name']}**\n\n{r['notes']}"
+                    if r.get('follow_up_date') and not r.get('follow_up_done'):
+                        reply += f"\n\n📅 Follow up: {r['follow_up_date']}"
+                else:
+                    reply = f"🔍 Tidak ditemukan info tentang '{query}' di Personal Brain.\n\nCoba catat dulu dengan: 'catat [nama] [informasi]'"
+
+            return {
+                "status": "success",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "brain",
+                    "summary": reply,
+                    "action": action,
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
+
+        except Exception as e:
+            print(f"[BRAIN ERROR] {e}")
+            reply = f"❌ Gagal akses Personal Brain: {str(e)}"
+            return {
+                "status": "error",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "brain",
+                    "summary": reply,
+                    "action": "error",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
+
+    # ── Handle Casual ─────────────────────────────────────
     if casual and not is_email_command and not is_broadcast and not is_quote and not is_file_send:
         system_prompt = """Kamu adalah Orion AI, asisten bisnis yang cerdas dan ramah.
 Jawab pesan berikut dengan natural, singkat, dan friendly dalam Bahasa Indonesia.
-Kamu adalah AI assistant seperti Claude — langsung jawab tanpa format JSON.
 Maksimal 2-3 kalimat saja."""
         try:
             reply = await call_llm(system_prompt, message)
@@ -118,7 +269,7 @@ Maksimal 2-3 kalimat saja."""
                 }
             }
 
-    # ── Handle Kirim File dari Drive ──
+    # ── Handle Kirim File dari Drive ──────────────────────
     if is_file_send:
         try:
             info = await extract_send_file_info(message)
@@ -208,14 +359,12 @@ Maksimal 2-3 kalimat saja."""
                 }
             }
 
-    # ── Handle Broadcast ──
+    # ── Handle Broadcast ──────────────────────────────────
     if is_broadcast:
-        # Hapus trigger words untuk ambil isi pesan
         pesan = message
         for trigger in broadcast_keywords:
             pesan = pesan.replace(trigger, '').strip()
 
-        # Kalau pesan kosong atau terlalu pendek → tanya dulu
         if len(pesan) < 10:
             reply = "Siap! 📢 Pesan apa yang ingin kamu broadcast ke semua customer? Ketik pesannya sekarang."
             return {
@@ -235,7 +384,6 @@ Maksimal 2-3 kalimat saja."""
                 }
             }
 
-        # Kalau sudah ada pesan → langsung konfirmasi
         return {
             "status": "success",
             "message": message,
@@ -243,7 +391,7 @@ Maksimal 2-3 kalimat saja."""
             "emails": [],
             "parsed": {
                 "intent": "broadcast",
-                "summary": f"Broadcast ke semua customer",
+                "summary": "Broadcast ke semua customer",
                 "action": "broadcast",
                 "needs_confirmation": True,
                 "draft": pesan,
@@ -252,9 +400,8 @@ Maksimal 2-3 kalimat saja."""
             }
         }
 
-    # ── Handle Quote ──
+    # ── Handle Quote ──────────────────────────────────────
     if is_quote:
-        # Cek apakah ada detail customer
         pesan = message
         for trigger in quote_keywords:
             pesan = pesan.replace(trigger, '').strip()
@@ -294,7 +441,7 @@ Maksimal 2-3 kalimat saja."""
             }
         }
 
-    # ── Handle Email ──
+    # ── Handle Email ──────────────────────────────────────
     email_context = ""
     emails = []
     target_email = None
@@ -341,10 +488,9 @@ Tugasmu adalah memahami perintah pengguna dan memberikan respons yang helpful.
 
 PENTING:
 1. Jawab HANYA dengan 1 JSON object saja, tanpa teks lain, tanpa backtick.
-2. needs_confirmation hanya TRUE untuk perintah balas email atau kirim pesan bisnis.
-3. Untuk pertanyaan umum → needs_confirmation: false, isi field "reply" bukan "draft".
-4. Field reply_to WAJIB diisi dengan alamat email asli jika ada email konteks.
-5. Jangan pernah isi reply_to dengan placeholder.
+2. needs_confirmation hanya TRUE untuk perintah balas email.
+3. Untuk pertanyaan umum → needs_confirmation: false, isi field "reply".
+4. Field reply_to WAJIB diisi dengan email asli jika ada email konteks.
 
 Format JSON:
 {{
