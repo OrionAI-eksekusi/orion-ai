@@ -16,7 +16,6 @@ def is_casual_message(message: str) -> bool:
         'tolong', 'bantu', 'bisa', 'test', 'coba', 'help'
     ]
     msg_lower = message.lower().strip()
-    # Pesan pendek < 5 kata kemungkinan casual
     if len(msg_lower.split()) <= 4:
         return True
     return any(kw in msg_lower for kw in casual_keywords)
@@ -211,16 +210,43 @@ Maksimal 2-3 kalimat saja."""
 
     # ── Handle Broadcast ──
     if is_broadcast:
+        # Hapus trigger words untuk ambil isi pesan
+        pesan = message
+        for trigger in broadcast_keywords:
+            pesan = pesan.replace(trigger, '').strip()
+
+        # Kalau pesan kosong atau terlalu pendek → tanya dulu
+        if len(pesan) < 10:
+            reply = "Siap! 📢 Pesan apa yang ingin kamu broadcast ke semua customer? Ketik pesannya sekarang."
+            return {
+                "status": "success",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "casual",
+                    "summary": reply,
+                    "action": "tanya_broadcast",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
+
+        # Kalau sudah ada pesan → langsung konfirmasi
         return {
             "status": "success",
             "message": message,
-            "response": "Broadcast dimulai",
+            "response": "Broadcast siap dikirim",
+            "emails": [],
             "parsed": {
                 "intent": "broadcast",
-                "summary": "Mengirim pesan broadcast ke semua customer",
+                "summary": f"Broadcast ke semua customer",
                 "action": "broadcast",
                 "needs_confirmation": True,
-                "draft": message.replace("broadcast", "").replace("kirim semua", "").strip(),
+                "draft": pesan,
                 "reply_to": "",
                 "subject": ""
             }
@@ -228,16 +254,41 @@ Maksimal 2-3 kalimat saja."""
 
     # ── Handle Quote ──
     if is_quote:
+        # Cek apakah ada detail customer
+        pesan = message
+        for trigger in quote_keywords:
+            pesan = pesan.replace(trigger, '').strip()
+
+        if len(pesan) < 5:
+            reply = "Siap! 📋 Untuk siapa quotation ini dibuat? Dan produk/jasa apa yang ingin ditawarkan?"
+            return {
+                "status": "success",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "casual",
+                    "summary": reply,
+                    "action": "tanya_quotation",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
+
         return {
             "status": "success",
             "message": message,
             "response": "Membuat quotation",
+            "emails": [],
             "parsed": {
                 "intent": "quotation",
                 "summary": "Membuat quotation PDF",
                 "action": "generate_quote",
                 "needs_confirmation": True,
-                "draft": "",
+                "draft": pesan,
                 "reply_to": "",
                 "subject": ""
             }
@@ -311,7 +362,6 @@ Format JSON:
     parsed = parse_json_response(ai_response)
 
     if parsed:
-        # Hanya email yang perlu konfirmasi
         if is_email_command and parsed.get('draft') and parsed.get('reply_to'):
             parsed["needs_confirmation"] = True
         else:
