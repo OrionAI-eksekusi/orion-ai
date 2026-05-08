@@ -7,7 +7,6 @@ from datetime import datetime
 DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 BLOCKED_PHONES = ['status@broadcast', 'status', 'broadcast', '']
-
 MAX_NAME_LENGTH = 30
 MAX_HISTORY = 20
 
@@ -18,6 +17,8 @@ MAX_HISTORY = 20
 def init_memory_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+
+    # ── Customer Memory (WA) ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS customer_memory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,8 +32,28 @@ def init_memory_db():
             notes TEXT DEFAULT ''
         )
     ''')
+
+    # ── Personal Brain ──
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS personal_brain (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT DEFAULT 'default',
+            entity_name TEXT NOT NULL,
+            entity_type TEXT DEFAULT 'contact',
+            notes TEXT DEFAULT '',
+            details TEXT DEFAULT '{}',
+            follow_up_date TEXT DEFAULT '',
+            follow_up_done INTEGER DEFAULT 0,
+            follow_up_count INTEGER DEFAULT 0,
+            last_contact TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    ''')
+
     conn.commit()
     conn.close()
+
 
 # ─────────────────────────────────────────────
 # VALIDASI
@@ -49,6 +70,7 @@ def is_valid_phone(phone: str) -> bool:
         return False
     return True
 
+
 def sanitize_name(name: str) -> str:
     if not name:
         return ''
@@ -56,6 +78,7 @@ def sanitize_name(name: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z\s.\-']", '', cleaned).strip()
     cleaned = cleaned.capitalize()
     return cleaned[:MAX_NAME_LENGTH] if cleaned else ''
+
 
 # ─────────────────────────────────────────────
 # EXTRACT NAMA
@@ -83,6 +106,7 @@ NOT_A_NAME = {
     'am', 'are', 'was', 'were', 'be'
 }
 
+
 def extract_name_from_message(message: str) -> str:
     if not message or len(message.strip()) < 3:
         return ''
@@ -101,8 +125,9 @@ def extract_name_from_message(message: str) -> str:
                 return sanitize_name(name_candidate)
     return ''
 
+
 # ─────────────────────────────────────────────
-# CRUD MEMORY
+# CUSTOMER MEMORY (WA)
 # ─────────────────────────────────────────────
 
 def get_customer_memory(phone: str):
@@ -130,6 +155,7 @@ def get_customer_memory(phone: str):
         "history": history,
         "notes": row[8] or ''
     }
+
 
 def update_customer_memory(phone: str, message: str, reply: str):
     if not is_valid_phone(phone):
@@ -170,6 +196,7 @@ def update_customer_memory(phone: str, message: str, reply: str):
     finally:
         conn.close()
 
+
 def update_customer_name(phone: str, name: str):
     if not is_valid_phone(phone):
         return
@@ -181,6 +208,7 @@ def update_customer_name(phone: str, name: str):
     c.execute("UPDATE customer_memory SET name=? WHERE phone=?", (clean_name, phone))
     conn.commit()
     conn.close()
+
 
 def get_all_customers(limit=50):
     conn = sqlite3.connect(DB_PATH)
@@ -202,6 +230,7 @@ def get_all_customers(limit=50):
         }
         for r in rows
     ]
+
 
 def build_customer_context(phone: str) -> str:
     if not is_valid_phone(phone):
@@ -227,3 +256,177 @@ PENTING: Gunakan memori ini untuk membalas lebih personal.
 Kalau sudah kenal namanya, sapa dengan namanya.
 Kalau pernah tanya produk tertentu, ingat preferensinya.
 """.strip()
+
+
+# ─────────────────────────────────────────────
+# PERSONAL BRAIN
+# ─────────────────────────────────────────────
+
+def save_brain_entry(user_id: str, entity_name: str, notes: str,
+                      entity_type: str = 'contact', details: dict = {},
+                      follow_up_date: str = '') -> bool:
+    """Simpan atau update entri di Personal Brain"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        now = datetime.now().isoformat()
+
+        # Cek apakah sudah ada
+        c.execute('''
+            SELECT id, notes FROM personal_brain
+            WHERE user_id = ? AND entity_name LIKE ?
+        ''', (user_id, f'%{entity_name}%'))
+        row = c.fetchone()
+
+        if row:
+            # Update — append notes baru
+            existing_notes = row[1] or ''
+            new_notes = f"{existing_notes}\n[{datetime.now().strftime('%d/%m/%Y %H:%M')}] {notes}".strip()
+            c.execute('''
+                UPDATE personal_brain SET
+                    notes = ?,
+                    details = ?,
+                    follow_up_date = CASE WHEN ? != '' THEN ? ELSE follow_up_date END,
+                    follow_up_done = CASE WHEN ? != '' THEN 0 ELSE follow_up_done END,
+                    updated_at = ?
+                WHERE id = ?
+            ''', (new_notes, json.dumps(details), follow_up_date, follow_up_date,
+                  follow_up_date, now, row[0]))
+        else:
+            # Insert baru
+            timestamped_notes = f"[{datetime.now().strftime('%d/%m/%Y %H:%M')}] {notes}"
+            c.execute('''
+                INSERT INTO personal_brain
+                    (user_id, entity_name, entity_type, notes, details, follow_up_date, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, entity_name, entity_type, timestamped_notes,
+                  json.dumps(details), follow_up_date, now, now))
+
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[BRAIN SAVE ERROR] {e}")
+        return False
+
+
+def get_brain_entry(user_id: str, entity_name: str) -> dict:
+    """Cari entri di Personal Brain"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, details,
+                   follow_up_date, follow_up_count, last_contact, created_at
+            FROM personal_brain
+            WHERE user_id = ? AND entity_name LIKE ?
+            ORDER BY updated_at DESC LIMIT 1
+        ''', (user_id, f'%{entity_name}%'))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return {}
+        return {
+            "name": row[0], "type": row[1], "notes": row[2],
+            "details": row[3], "follow_up_date": row[4],
+            "follow_up_count": row[5] or 0,
+            "last_contact": row[6] or '',
+            "created_at": row[7]
+        }
+    except Exception as e:
+        print(f"[BRAIN GET ERROR] {e}")
+        return {}
+
+
+def get_all_brain_entries(user_id: str) -> list:
+    """Ambil semua entri Personal Brain"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, follow_up_date,
+                   follow_up_done, last_contact, updated_at
+            FROM personal_brain
+            WHERE user_id = ?
+            ORDER BY updated_at DESC
+        ''', (user_id,))
+        rows = c.fetchall()
+        conn.close()
+        return [{
+            "name": r[0], "type": r[1], "notes": r[2],
+            "follow_up_date": r[3], "follow_up_done": bool(r[4]),
+            "last_contact": r[5] or '', "updated_at": r[6]
+        } for r in rows]
+    except Exception as e:
+        print(f"[BRAIN LIST ERROR] {e}")
+        return []
+
+
+def get_pending_follow_ups(user_id: str) -> list:
+    """Ambil follow up yang sudah jatuh tempo — max 2x"""
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
+            FROM personal_brain
+            WHERE user_id = ?
+            AND follow_up_done = 0
+            AND follow_up_date != ''
+            AND follow_up_date <= ?
+            AND follow_up_count < 2
+            ORDER BY follow_up_date ASC
+        ''', (user_id, today))
+        rows = c.fetchall()
+        conn.close()
+        return [{
+            "name": r[0], "type": r[1], "notes": r[2],
+            "follow_up_date": r[3], "follow_up_count": r[4]
+        } for r in rows]
+    except Exception as e:
+        print(f"[FOLLOW UP ERROR] {e}")
+        return []
+
+
+def mark_brain_follow_up_sent(user_id: str, entity_name: str):
+    """Increment follow up count — kalau sudah 2x → done"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            UPDATE personal_brain SET
+                follow_up_count = follow_up_count + 1,
+                follow_up_done = CASE WHEN follow_up_count + 1 >= 2 THEN 1 ELSE 0 END,
+                last_contact = ?,
+                updated_at = ?
+            WHERE user_id = ? AND entity_name LIKE ?
+        ''', (datetime.now().isoformat(), datetime.now().isoformat(),
+              user_id, f'%{entity_name}%'))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[BRAIN FOLLOW UP ERROR] {e}")
+
+
+def search_brain(user_id: str, keyword: str) -> list:
+    """Cari di Personal Brain berdasarkan keyword"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, follow_up_date, updated_at
+            FROM personal_brain
+            WHERE user_id = ?
+            AND (entity_name LIKE ? OR notes LIKE ?)
+            ORDER BY updated_at DESC LIMIT 5
+        ''', (user_id, f'%{keyword}%', f'%{keyword}%'))
+        rows = c.fetchall()
+        conn.close()
+        return [{
+            "name": r[0], "type": r[1], "notes": r[2],
+            "follow_up_date": r[3], "updated_at": r[4]
+        } for r in rows]
+    except Exception as e:
+        print(f"[BRAIN SEARCH ERROR] {e}")
+        return []
