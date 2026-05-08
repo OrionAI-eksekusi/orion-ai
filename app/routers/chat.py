@@ -11,7 +11,9 @@ from app.services.database_service import (
 from app.services.calendar_service import get_upcoming_events
 from app.services.memory_service import (
     init_memory_db, get_customer_memory, update_customer_memory,
-    get_all_customers, build_customer_context
+    get_all_customers, build_customer_context,
+    save_brain_entry, get_brain_entry, get_all_brain_entries,
+    get_pending_follow_ups, mark_brain_follow_up_sent, search_brain
 )
 import httpx
 import json
@@ -82,6 +84,13 @@ class SaveUserProfileRequest(BaseModel):
     phone: str
     city: str = "Jakarta"
     briefing_hour: int = 6
+
+class SaveBrainRequest(BaseModel):
+    user_id: str = "default"
+    entity_name: str
+    notes: str
+    entity_type: str = "contact"
+    follow_up_date: str = ""
 
 
 # ── FCM Helper ─────────────────────────────────────────────
@@ -188,7 +197,8 @@ async def get_user_profile_endpoint(user_id: str):
 
 @router.post("/")
 async def chat(request: CommandRequest):
-    result = await process_command(request.message)
+    # Kirim user_id ke process_command untuk Personal Brain
+    result = await process_command(request.message, request.user_id)
     return result
 
 
@@ -345,7 +355,54 @@ async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks
         return {"status": "error", "message": str(e)}
 
 
-# ── Meeting Transcriber Endpoint ───────────────────────────
+# ── Personal Brain Endpoints ───────────────────────────────
+@router.post("/brain/save")
+async def brain_save(request: SaveBrainRequest):
+    """Simpan entri ke Personal Brain"""
+    try:
+        save_brain_entry(
+            user_id=request.user_id,
+            entity_name=request.entity_name,
+            notes=request.notes,
+            entity_type=request.entity_type,
+            follow_up_date=request.follow_up_date
+        )
+        return {"status": "success", "message": f"Tersimpan: {request.entity_name}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/brain/list/{user_id}")
+async def brain_list(user_id: str):
+    """Ambil semua entri Personal Brain"""
+    try:
+        entries = get_all_brain_entries(user_id)
+        return {"status": "success", "entries": entries}
+    except Exception as e:
+        return {"status": "error", "entries": [], "message": str(e)}
+
+
+@router.get("/brain/search/{user_id}")
+async def brain_search(user_id: str, q: str = ""):
+    """Cari di Personal Brain"""
+    try:
+        results = search_brain(user_id, q)
+        return {"status": "success", "results": results}
+    except Exception as e:
+        return {"status": "error", "results": [], "message": str(e)}
+
+
+@router.get("/brain/follow-ups/{user_id}")
+async def brain_follow_ups(user_id: str):
+    """Ambil follow up yang pending"""
+    try:
+        follow_ups = get_pending_follow_ups(user_id)
+        return {"status": "success", "follow_ups": follow_ups}
+    except Exception as e:
+        return {"status": "error", "follow_ups": [], "message": str(e)}
+
+
+# ── Meeting Transcriber ────────────────────────────────────
 @router.post("/transcribe-meeting")
 async def transcribe_meeting(
     background_tasks: BackgroundTasks,
@@ -355,21 +412,10 @@ async def transcribe_meeting(
     language: str = Form(default="id"),
     user_id: str = Form(default="default"),
 ):
-    """
-    Upload audio meeting → transkrip → analisa → kirim notulen via email
-    """
     try:
-        # Validasi file audio
-        allowed_types = [
-            "audio/mpeg", "audio/mp4", "audio/wav", "audio/webm",
-            "audio/ogg", "audio/flac", "audio/m4a", "video/mp4"
-        ]
-        content_type = audio.content_type or ""
         filename = audio.filename or "audio.mp3"
+        print(f"[MEETING] Upload: {filename}")
 
-        print(f"[MEETING] Upload: {filename} ({content_type})")
-
-        # Simpan audio ke temp file
         suffix = os.path.splitext(filename)[1] or ".mp3"
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=suffix, dir="/tmp"
@@ -380,13 +426,11 @@ async def transcribe_meeting(
 
         print(f"[MEETING] File tersimpan: {tmp_path} ({len(content)} bytes)")
 
-        # Parse emails peserta
         emails_list = []
         if participant_emails:
             emails_list = [e.strip() for e in participant_emails.split(",")
                           if e.strip() and "@" in e.strip()]
 
-        # Proses di background
         background_tasks.add_task(
             _process_meeting_background,
             tmp_path, meeting_title, emails_list, language, user_id
@@ -411,7 +455,6 @@ async def _process_meeting_background(
     language: str,
     user_id: str
 ):
-    """Proses meeting di background"""
     try:
         from app.services.transcriber_service import process_meeting
 
@@ -424,14 +467,12 @@ async def _process_meeting_background(
         )
 
         if result["status"] == "success":
-            # Notif ke HP
             await send_fcm_notification(
                 title="🎙️ Meeting Selesai Diproses!",
                 body=f"Notulen '{meeting_title}' siap. Terkirim ke {result['emails_sent']} peserta.",
                 data={"type": "meeting", "summary": result["summary"][:200]},
                 user_id=user_id
             )
-            print(f"[MEETING BG] Selesai! Notif terkirim ke user {user_id}")
         else:
             await send_fcm_notification(
                 title="❌ Gagal Proses Meeting",
@@ -440,7 +481,6 @@ async def _process_meeting_background(
                 user_id=user_id
             )
 
-        # Hapus temp file
         try:
             os.remove(audio_path)
         except:
