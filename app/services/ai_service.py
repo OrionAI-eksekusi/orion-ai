@@ -6,6 +6,21 @@ from app.services.ai_provider import call_llm, parse_json_response
 
 load_dotenv()
 
+# ── Detect casual/umum (tidak perlu konfirmasi) ───────────
+def is_casual_message(message: str) -> bool:
+    casual_keywords = [
+        'halo', 'hai', 'hello', 'hi', 'apa kabar', 'selamat',
+        'pagi', 'siang', 'malam', 'sore', 'makasih', 'terima kasih',
+        'ok', 'oke', 'siap', 'mantap', 'keren', 'bagus', 'good',
+        'siapa kamu', 'kamu apa', 'orion itu', 'apa itu', 'gimana',
+        'tolong', 'bantu', 'bisa', 'test', 'coba', 'help'
+    ]
+    msg_lower = message.lower().strip()
+    # Pesan pendek < 5 kata kemungkinan casual
+    if len(msg_lower.split()) <= 4:
+        return True
+    return any(kw in msg_lower for kw in casual_keywords)
+
 # ── Detect request quotation ──────────────────────────────
 def is_quote_request(message: str) -> bool:
     keywords = [
@@ -26,7 +41,6 @@ def is_send_file_command(message: str) -> bool:
 
 # ── Extract info dari perintah kirim file ─────────────────
 async def extract_send_file_info(message: str) -> dict:
-    """Extract nama file, nama penerima, email dari perintah"""
     system_prompt = """Dari perintah berikut, ekstrak informasi dalam JSON:
 {
     "file_name": "nama file yang ingin dikirim (tanpa ekstensi jika tidak disebutkan)",
@@ -36,7 +50,6 @@ async def extract_send_file_info(message: str) -> dict:
     "subject": "subject email yang sesuai"
 }
 Respond HANYA dengan JSON."""
-
     try:
         response = await call_llm(system_prompt, message)
         clean = response.replace('```json', '').replace('```', '').strip()
@@ -50,6 +63,7 @@ Respond HANYA dengan JSON."""
             "subject": "File dari Orion AI"
         }
 
+
 async def process_command(message: str):
     email_keywords = ['email', 'balas', 'inbox', 'pesan masuk', 'surat']
     broadcast_keywords = ['broadcast', 'kirim semua', 'blast', 'semua customer', 'semua pelanggan']
@@ -61,11 +75,53 @@ async def process_command(message: str):
     is_broadcast = any(word in message.lower() for word in broadcast_keywords)
     is_quote = any(word in message.lower() for word in quote_keywords)
     is_file_send = any(word in message.lower() for word in file_keywords)
+    casual = is_casual_message(message)
+
+    # ── Handle Casual — langsung jawab tanpa konfirmasi ──
+    if casual and not is_email_command and not is_broadcast and not is_quote and not is_file_send:
+        system_prompt = """Kamu adalah Orion AI, asisten bisnis yang cerdas dan ramah.
+Jawab pesan berikut dengan natural, singkat, dan friendly dalam Bahasa Indonesia.
+Kamu adalah AI assistant seperti Claude — langsung jawab tanpa format JSON.
+Maksimal 2-3 kalimat saja."""
+        try:
+            reply = await call_llm(system_prompt, message)
+            return {
+                "status": "success",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "casual",
+                    "summary": reply,
+                    "action": "chat",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
+        except Exception as e:
+            return {
+                "status": "success",
+                "message": message,
+                "response": "Halo! Saya Orion AI, siap membantu kamu. 😊",
+                "emails": [],
+                "parsed": {
+                    "intent": "casual",
+                    "summary": "Halo! Saya Orion AI, siap membantu kamu. 😊",
+                    "action": "chat",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": "Halo! Saya Orion AI, siap membantu kamu. 😊",
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
 
     # ── Handle Kirim File dari Drive ──
     if is_file_send:
         try:
-            # Extract info dari perintah
             info = await extract_send_file_info(message)
             file_name = info.get("file_name", "")
             recipient_name = info.get("recipient_name", "")
@@ -73,38 +129,30 @@ async def process_command(message: str):
             subject = info.get("subject", "File Terlampir")
             body = info.get("message_body", "Terlampir file yang diminta.")
 
-            result_msg = f"Mencari file '{file_name}' di Google Drive..."
             found_files = []
             download_path = ""
             actual_filename = ""
 
             if file_name:
-                from app.services.gmail_service import search_drive_files, download_drive_file
+                from app.services.gmail_service import search_drive_files
                 found_files = search_drive_files(file_name, max_results=3)
 
-            # Cari email penerima jika tidak disebutkan
             if not recipient_email and recipient_name:
                 from app.services.gmail_service import search_contact_email
                 from app.services.memory_service import get_all_customers
-                
-                # Cek di memory customer dulu
                 customers = get_all_customers()
                 for c in customers:
                     if recipient_name.lower() in (c.get("name", "") or "").lower():
                         recipient_email = c.get("phone", "")
                         break
-                
-                # Kalau tidak ketemu, cari di Gmail contacts
                 if not recipient_email or "@" not in recipient_email:
                     recipient_email = search_contact_email(recipient_name)
 
-            # Download dan kirim file jika ketemu
             if found_files and recipient_email and "@" in recipient_email:
                 file_info = found_files[0]
                 actual_filename = file_info["name"]
                 from app.services.gmail_service import download_drive_file, send_email_with_attachment
                 download_path = download_drive_file(file_info["id"], actual_filename)
-                
                 if download_path and os.path.exists(download_path):
                     send_result = send_email_with_attachment(
                         to=recipient_email,
@@ -113,7 +161,6 @@ async def process_command(message: str):
                         file_path=download_path,
                         filename=actual_filename
                     )
-                    
                     if send_result.get("status") == "sent":
                         summary = f"✅ File '{actual_filename}' berhasil dikirim ke {recipient_name} ({recipient_email})"
                     else:
@@ -136,7 +183,8 @@ async def process_command(message: str):
                     "summary": summary,
                     "action": "send_file_email",
                     "needs_confirmation": False,
-                    "draft": body,
+                    "draft": "",
+                    "reply": summary,
                     "reply_to": recipient_email,
                     "subject": subject,
                     "file_name": actual_filename,
@@ -144,16 +192,18 @@ async def process_command(message: str):
                 }
             }
         except Exception as e:
+            summary = f"❌ Gagal kirim file: {str(e)}"
             return {
                 "status": "error",
                 "message": message,
-                "response": f"Gagal kirim file: {str(e)}",
+                "response": summary,
                 "parsed": {
                     "intent": "send_file",
-                    "summary": f"Gagal: {str(e)}",
+                    "summary": summary,
                     "action": "error",
                     "needs_confirmation": False,
                     "draft": "",
+                    "reply": summary,
                     "reply_to": "",
                     "subject": ""
                 }
@@ -193,6 +243,7 @@ async def process_command(message: str):
             }
         }
 
+    # ── Handle Email ──
     email_context = ""
     emails = []
     target_email = None
@@ -236,34 +287,36 @@ Gunakan field 'from' di atas sebagai reply_to."""
     system_prompt = f"""Kamu adalah Orion AI, asisten eksekusi perintah bisnis.
 {email_context}
 Tugasmu adalah memahami perintah pengguna dan memberikan respons yang helpful.
-Kamu bisa membantu:
-- Membalas email
-- Membalas pesan WhatsApp
-- Membuat pesan bisnis
-- Mengirim file dari Google Drive via email
-- Menjawab pertanyaan umum
+
 PENTING:
 1. Jawab HANYA dengan 1 JSON object saja, tanpa teks lain, tanpa backtick.
-2. Langsung buatkan balasan email sesuai isi email di atas, jangan tanya-tanya.
-3. Field reply_to WAJIB diisi dengan alamat email asli dari field "from" di atas.
-4. Jangan pernah isi reply_to dengan placeholder apapun selain email asli.
-Selalu jawab dalam format JSON:
+2. needs_confirmation hanya TRUE untuk perintah balas email atau kirim pesan bisnis.
+3. Untuk pertanyaan umum → needs_confirmation: false, isi field "reply" bukan "draft".
+4. Field reply_to WAJIB diisi dengan alamat email asli jika ada email konteks.
+5. Jangan pernah isi reply_to dengan placeholder.
+
+Format JSON:
 {{
     "intent": "nama_aksi",
-    "summary": "ringkasan aksi dalam bahasa Indonesia",
-    "action": "detail teknis aksi",
-    "needs_confirmation": true,
-    "draft": "draft pesan/email yang siap dikirim dalam bahasa Indonesia yang sopan dan natural sesuai konteks email",
-    "reply_to": "email asli pengirim",
-    "subject": "Re: subject email asli"
-}}
-Untuk pesan WhatsApp, buat balasan yang sopan, natural, dan profesional dalam Bahasa Indonesia."""
+    "summary": "ringkasan dalam bahasa Indonesia",
+    "action": "detail aksi",
+    "needs_confirmation": false,
+    "draft": "draft email jika perlu dikirim, kosong jika tidak",
+    "reply": "jawaban langsung untuk pertanyaan umum",
+    "reply_to": "email asli pengirim jika ada",
+    "subject": "subject email jika ada"
+}}"""
 
     ai_response = await call_llm(system_prompt, message)
     parsed = parse_json_response(ai_response)
 
     if parsed:
-        parsed["needs_confirmation"] = True
+        # Hanya email yang perlu konfirmasi
+        if is_email_command and parsed.get('draft') and parsed.get('reply_to'):
+            parsed["needs_confirmation"] = True
+        else:
+            parsed["needs_confirmation"] = False
+
         reply_to = parsed.get("reply_to", "")
         if not reply_to or "@" not in reply_to:
             if target_email:
