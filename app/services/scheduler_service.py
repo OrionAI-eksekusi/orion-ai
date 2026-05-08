@@ -18,7 +18,6 @@ async def proactive_check():
         if not token:
             return
 
-        # Cek email tanpa AI — langsung dari Gmail API
         service = get_gmail_service()
         results = service.users().messages().list(
             userId='me',
@@ -34,7 +33,6 @@ async def proactive_check():
 
         count = len(messages)
 
-        # Ambil detail email pertama
         detail = service.users().messages().get(
             userId='me', id=messages[0]['id'], format='metadata',
             metadataHeaders=['From', 'Subject']
@@ -43,8 +41,6 @@ async def proactive_check():
         headers = detail['payload']['headers']
         sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
         subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
-
-        # Bersihkan nama pengirim
         sender_clean = sender.split('<')[0].strip().replace('"', '')
 
         await send_fcm_notification(
@@ -95,7 +91,7 @@ async def follow_up_check():
 
 
 async def generate_weekly_report():
-    """Generate laporan mingguan otomatis setiap Senin jam 07.00 WIB"""
+    """Generate laporan mingguan otomatis"""
     try:
         logger.info("[REPORT] Memulai generate laporan mingguan...")
 
@@ -363,7 +359,7 @@ async def _generate_report_pdf(
 
 def start_scheduler():
     try:
-        # Job 1: Proactive email check tiap 30 menit — HEMAT TOKEN!
+        # Job 1: Proactive email check tiap 30 menit — hemat token
         scheduler.add_job(
             proactive_check,
             trigger=IntervalTrigger(minutes=30),
@@ -379,16 +375,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: Laporan mingguan setiap Senin jam 07.00 WIB (UTC = 00.00)
+        # Job 3: TEST — laporan tiap 2 menit
         scheduler.add_job(
             generate_weekly_report,
-            trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
+            trigger=IntervalTrigger(minutes=2),
             id="weekly_report",
             replace_existing=True,
         )
 
         scheduler.start()
-        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit hemat, follow up: 1 jam, report: Senin 07.00)")
+        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit, follow up: 1 jam, report: 2 menit TEST)")
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
