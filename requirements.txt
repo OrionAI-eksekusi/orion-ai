@@ -13,3 +13,4 @@ firebase-admin
 apscheduler
 reportlab
 groq
+python-multipart
