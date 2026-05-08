@@ -54,7 +54,7 @@ async def proactive_check():
 
 
 async def follow_up_check():
-    """Cek customer WA yang belum dibalas lebih dari 24 jam"""
+    """Cek customer WA yang belum dibalas — max 2x follow up"""
     try:
         logger.info("[FOLLOWUP] Mengecek pesan yang belum dibalas...")
         from app.services.database_service import get_unreplied_messages, mark_follow_up_sent
@@ -68,16 +68,34 @@ async def follow_up_check():
 
         for msg in unreplied:
             phone = msg["phone"]
+            follow_up_count = msg.get("follow_up_count", 0)
+
+            # Stop kalau sudah 2x follow up
+            if follow_up_count >= 2:
+                logger.info(f"[FOLLOWUP] {phone} sudah 2x follow up, skip")
+                continue
+
             try:
                 memory = get_customer_memory(phone)
                 name = memory.get("name", "") if memory else ""
-                if name:
-                    follow_up = f"Halo {name}! 😊 Ada yang bisa kami bantu? Kami siap melayani kamu."
+
+                if follow_up_count == 0:
+                    # Follow up pertama — friendly
+                    if name:
+                        follow_up = f"Halo {name}! 😊 Ada yang bisa kami bantu? Kami siap melayani kamu."
+                    else:
+                        follow_up = "Halo! 😊 Ada yang bisa kami bantu? Kami siap melayani Anda."
                 else:
-                    follow_up = "Halo! 😊 Ada yang bisa kami bantu? Kami siap melayani Anda."
+                    # Follow up kedua — lebih singkat
+                    if name:
+                        follow_up = f"Halo {name}, kami ingin memastikan apakah ada yang bisa kami bantu? 🙏"
+                    else:
+                        follow_up = "Halo, apakah ada yang bisa kami bantu? 🙏"
+
                 send_whatsapp(phone, follow_up)
                 mark_follow_up_sent(phone)
-                logger.info(f"[FOLLOWUP] Follow up terkirim ke {phone}")
+                logger.info(f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
+
             except Exception as e:
                 logger.error(f"[FOLLOWUP ERROR] {phone}: {e}")
 
@@ -85,29 +103,71 @@ async def follow_up_check():
         logger.error(f"[FOLLOWUP CHECK ERROR] {e}")
 
 
+async def brain_follow_up_check():
+    """Cek Personal Brain follow up yang jatuh tempo — kirim notif ke semua user"""
+    try:
+        logger.info("[BRAIN FOLLOWUP] Cek Personal Brain follow up...")
+        from app.services.database_service import get_all_active_users
+        from app.services.memory_service import get_pending_follow_ups, mark_brain_follow_up_sent
+        from app.routers.chat import send_fcm_notification
+
+        users = get_all_active_users()
+
+        if not users:
+            # Fallback ke default user
+            users = [{"user_id": "default", "name": ""}]
+
+        for user in users:
+            user_id = user["user_id"]
+            try:
+                pending = get_pending_follow_ups(user_id)
+                if not pending:
+                    continue
+
+                for item in pending:
+                    name = item["name"]
+                    notes = item["notes"]
+                    follow_up_count = item.get("follow_up_count", 0)
+
+                    # Notif ke HP
+                    await send_fcm_notification(
+                        title=f"⏰ Follow Up: {name}",
+                        body=f"Jadwal follow up hari ini! {notes[:60]}",
+                        data={
+                            "type": "brain_followup",
+                            "entity_name": name,
+                            "follow_up_count": str(follow_up_count + 1)
+                        },
+                        user_id=user_id
+                    )
+
+                    # Mark sudah dikirim
+                    mark_brain_follow_up_sent(user_id, name)
+                    logger.info(f"[BRAIN FOLLOWUP] Notif terkirim: {name} (user: {user_id})")
+
+            except Exception as e:
+                logger.error(f"[BRAIN FOLLOWUP ERROR] user {user_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"[BRAIN FOLLOWUP CHECK ERROR] {e}")
+
+
 async def daily_intelligence_briefing():
-    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB"""
+    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB ke semua user"""
     try:
         logger.info("[BRIEFING] Memulai Daily Intelligence Briefing...")
 
         from app.services.gmail_service import get_gmail_service
-        from app.services.database_service import get_wa_messages
+        from app.services.database_service import get_wa_messages, get_all_active_users
         from app.services.calendar_service import get_upcoming_events
-        from app.routers.chat import send_fcm_notification, get_fcm_token
+        from app.routers.chat import send_fcm_notification
         from app.services.ai_provider import call_llm
         import httpx
         from datetime import datetime
         import os
 
-        token = get_fcm_token()
-        if not token:
-            logger.info("[BRIEFING] Tidak ada FCM token, skip")
-            return
-
-        user_name = os.getenv("USER_NAME", "Bos")
-        user_city = os.getenv("USER_CITY", "Jakarta")
-
         # ── Cuaca ──────────────────────────────────────
+        user_city = os.getenv("USER_CITY", "Jakarta")
         weather_text = "Tidak tersedia"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -164,7 +224,7 @@ async def daily_intelligence_briefing():
         except Exception:
             pass
 
-        # ── Quote motivasi via AI ──────────────────────
+        # ── Quote motivasi ─────────────────────────────
         quote = ""
         try:
             quote = await call_llm(
@@ -174,7 +234,7 @@ async def daily_intelligence_briefing():
         except Exception:
             quote = "Hari ini adalah kesempatan baru untuk jadi lebih baik!"
 
-        # ── Berita bisnis via AI ───────────────────────
+        # ── Berita bisnis ──────────────────────────────
         business_news = ""
         try:
             business_news = await call_llm(
@@ -189,11 +249,34 @@ async def daily_intelligence_briefing():
         day_id = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"][now.weekday()]
         date_str = now.strftime(f"{day_id}, %d %B %Y")
 
-        briefing_text = f"""☀️ Selamat Pagi, {user_name}!
+        # ── Kirim ke semua user aktif ──────────────────
+        users = get_all_active_users()
+        if not users:
+            users = [{"user_id": "default", "name": os.getenv("USER_NAME", "Bos"),
+                      "city": user_city, "phone": os.getenv("USER_PHONE", "")}]
+
+        for user in users:
+            user_id = user["user_id"]
+            user_name = user.get("name") or os.getenv("USER_NAME", "Bos")
+            user_phone = user.get("phone") or os.getenv("USER_PHONE", "")
+            city = user.get("city") or user_city
+
+            # Cek personal brain follow up hari ini
+            brain_reminder = ""
+            try:
+                from app.services.memory_service import get_pending_follow_ups
+                pending = get_pending_follow_ups(user_id)
+                if pending:
+                    names = [p["name"] for p in pending[:3]]
+                    brain_reminder = f"\n\n⏰ FOLLOW UP HARI INI:\n" + "\n".join([f"• {n}" for n in names])
+            except Exception:
+                pass
+
+            briefing_text = f"""☀️ Selamat Pagi, {user_name}!
 ━━━━━━━━━━━━━━━
 
 📅 {date_str}
-🌤️ Cuaca {user_city}: {weather_text}
+🌤️ Cuaca {city}: {weather_text}
 
 📧 EMAIL HARI INI:
 {f"Ada {email_count} email baru" if email_count > 0 else "Inbox bersih ✨"}
@@ -203,7 +286,7 @@ async def daily_intelligence_briefing():
 {f"Ada {wa_count} pesan belum dibalas" if wa_count > 0 else "Semua pesan sudah dibalas ✅"}
 
 📋 AGENDA HARI INI:
-{chr(10).join(events_today) if events_today else "• Tidak ada jadwal hari ini"}
+{chr(10).join(events_today) if events_today else "• Tidak ada jadwal hari ini"}{brain_reminder}
 
 📰 INSIGHT BISNIS:
 {business_news}
@@ -215,24 +298,24 @@ async def daily_intelligence_briefing():
 Semangat hari ini! 💪🔥
 — Orion AI"""
 
-        # ── Kirim FCM notif ────────────────────────────
-        await send_fcm_notification(
-            title=f"☀️ Selamat Pagi, {user_name}!",
-            body=f"📧 {email_count} email | 💬 {wa_count} WA | {weather_text}",
-            data={"type": "briefing", "content": briefing_text[:500]}
-        )
+            # Kirim FCM
+            await send_fcm_notification(
+                title=f"☀️ Selamat Pagi, {user_name}!",
+                body=f"📧 {email_count} email | 💬 {wa_count} WA | {weather_text}",
+                data={"type": "briefing", "content": briefing_text[:500]},
+                user_id=user_id
+            )
 
-        # ── Kirim via WA juga ──────────────────────────
-        try:
-            from app.services.whatsapp_service import send_whatsapp
-            user_phone = os.getenv("USER_PHONE", "")
-            if user_phone:
-                send_whatsapp(user_phone, briefing_text)
-                logger.info(f"[BRIEFING] Terkirim via WA ke {user_phone}")
-        except Exception as e:
-            logger.error(f"[BRIEFING WA] {e}")
+            # Kirim via WA
+            try:
+                from app.services.whatsapp_service import send_whatsapp
+                if user_phone:
+                    send_whatsapp(user_phone, briefing_text)
+                    logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
+            except Exception as e:
+                logger.error(f"[BRIEFING WA] {e}")
 
-        logger.info("[BRIEFING] Daily Intelligence Briefing berhasil dikirim!")
+        logger.info("[BRIEFING] Daily Intelligence Briefing selesai!")
 
     except Exception as e:
         logger.error(f"[BRIEFING ERROR] {e}")
@@ -495,7 +578,7 @@ async def _generate_report_pdf(
 
 def start_scheduler():
     try:
-        # Job 1: Proactive email check tiap 30 menit — hemat token
+        # Job 1: Proactive email check tiap 30 menit
         scheduler.add_job(
             proactive_check,
             trigger=IntervalTrigger(minutes=30),
@@ -503,7 +586,7 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 2: Follow up WA tiap 1 jam
+        # Job 2: Follow up WA tiap 1 jam — max 2x
         scheduler.add_job(
             follow_up_check,
             trigger=IntervalTrigger(hours=1),
@@ -511,7 +594,7 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: Laporan mingguan setiap Senin jam 07.00 WIB
+        # Job 3: Laporan mingguan Senin jam 07.00 WIB
         scheduler.add_job(
             generate_weekly_report,
             trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
@@ -519,7 +602,7 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 4: Daily Intelligence Briefing jam 06.00 WIB (UTC = 23.00)
+        # Job 4: Daily Intelligence Briefing jam 06.00 WIB (UTC=23.00)
         scheduler.add_job(
             daily_intelligence_briefing,
             trigger=CronTrigger(hour=23, minute=0),
@@ -527,8 +610,23 @@ def start_scheduler():
             replace_existing=True,
         )
 
+        # Job 5: Personal Brain follow up check jam 08.00 WIB (UTC=01.00)
+        scheduler.add_job(
+            brain_follow_up_check,
+            trigger=CronTrigger(hour=1, minute=0),
+            id="brain_followup",
+            replace_existing=True,
+        )
+
         scheduler.start()
-        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit, follow up: 1 jam, report: Senin 07.00, briefing: 06.00 pagi)")
+        logger.info(
+            "[SCHEDULER] Semua job dimulai:\n"
+            "  - Proactive: 30 menit\n"
+            "  - Follow up WA: 1 jam (max 2x)\n"
+            "  - Report: Senin 07.00 WIB\n"
+            "  - Briefing: 06.00 pagi\n"
+            "  - Brain Follow Up: 08.00 pagi"
+        )
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
