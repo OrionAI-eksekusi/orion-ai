@@ -32,7 +32,6 @@ async def proactive_check():
             return
 
         count = len(messages)
-
         detail = service.users().messages().get(
             userId='me', id=messages[0]['id'], format='metadata',
             metadataHeaders=['From', 'Subject']
@@ -63,7 +62,6 @@ async def follow_up_check():
         from app.services.memory_service import get_customer_memory
 
         unreplied = get_unreplied_messages(hours=24)
-
         if not unreplied:
             logger.info("[FOLLOWUP] Tidak ada pesan yang perlu follow up")
             return
@@ -73,21 +71,171 @@ async def follow_up_check():
             try:
                 memory = get_customer_memory(phone)
                 name = memory.get("name", "") if memory else ""
-
                 if name:
                     follow_up = f"Halo {name}! 😊 Ada yang bisa kami bantu? Kami siap melayani kamu."
                 else:
                     follow_up = "Halo! 😊 Ada yang bisa kami bantu? Kami siap melayani Anda."
-
                 send_whatsapp(phone, follow_up)
                 mark_follow_up_sent(phone)
                 logger.info(f"[FOLLOWUP] Follow up terkirim ke {phone}")
-
             except Exception as e:
                 logger.error(f"[FOLLOWUP ERROR] {phone}: {e}")
 
     except Exception as e:
         logger.error(f"[FOLLOWUP CHECK ERROR] {e}")
+
+
+async def daily_intelligence_briefing():
+    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB"""
+    try:
+        logger.info("[BRIEFING] Memulai Daily Intelligence Briefing...")
+
+        from app.services.gmail_service import get_gmail_service
+        from app.services.database_service import get_wa_messages
+        from app.services.calendar_service import get_upcoming_events
+        from app.routers.chat import send_fcm_notification, get_fcm_token
+        from app.services.ai_provider import call_llm
+        import httpx
+        from datetime import datetime
+        import os
+
+        token = get_fcm_token()
+        if not token:
+            logger.info("[BRIEFING] Tidak ada FCM token, skip")
+            return
+
+        user_name = os.getenv("USER_NAME", "Bos")
+        user_city = os.getenv("USER_CITY", "Jakarta")
+
+        # ── Cuaca ──────────────────────────────────────
+        weather_text = "Tidak tersedia"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                res = await client.get(
+                    f"https://wttr.in/{user_city}?format=%C+%t+%h",
+                    headers={"User-Agent": "curl/7.68.0"}
+                )
+                if res.status_code == 200:
+                    weather_text = res.text.strip()
+        except Exception:
+            pass
+
+        # ── Email baru ─────────────────────────────────
+        email_count = 0
+        urgent_emails = []
+        try:
+            service = get_gmail_service()
+            results = service.users().messages().list(
+                userId='me',
+                maxResults=10,
+                labelIds=['INBOX', 'UNREAD'],
+                q='is:unread newer_than:1d'
+            ).execute()
+            messages = results.get('messages', [])
+            email_count = len(messages)
+
+            for msg in messages[:3]:
+                detail = service.users().messages().get(
+                    userId='me', id=msg['id'], format='metadata',
+                    metadataHeaders=['From', 'Subject']
+                ).execute()
+                headers = detail['payload']['headers']
+                sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
+                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+                sender_clean = sender.split('<')[0].strip().replace('"', '')
+                urgent_emails.append(f"• {sender_clean}: {subject[:50]}")
+        except Exception as e:
+            logger.error(f"[BRIEFING EMAIL] {e}")
+
+        # ── WA belum dibalas ───────────────────────────
+        wa_messages = get_wa_messages(limit=20)
+        wa_unreplied = [m for m in wa_messages if not m.get("replied")]
+        wa_count = len(wa_unreplied)
+
+        # ── Kalender hari ini ──────────────────────────
+        events_today = []
+        try:
+            events = get_upcoming_events(max_results=5)
+            today = datetime.now().strftime("%Y-%m-%d")
+            for e in events:
+                start = e.get("start", "")
+                if today in str(start):
+                    events_today.append(f"• {e.get('title', '')} — {start[11:16]}")
+        except Exception:
+            pass
+
+        # ── Quote motivasi via AI ──────────────────────
+        quote = ""
+        try:
+            quote = await call_llm(
+                "Kamu adalah generator quote motivasi bisnis. Berikan 1 quote motivasi singkat dalam Bahasa Indonesia, maksimal 15 kata. Hanya tulis quotenya saja tanpa tanda kutip.",
+                "Berikan quote motivasi hari ini"
+            )
+        except Exception:
+            quote = "Hari ini adalah kesempatan baru untuk jadi lebih baik!"
+
+        # ── Berita bisnis via AI ───────────────────────
+        business_news = ""
+        try:
+            business_news = await call_llm(
+                "Kamu adalah analis bisnis Indonesia. Berikan 2-3 poin berita/insight bisnis yang relevan hari ini dalam Bahasa Indonesia. Format: bullet point singkat. Maksimal 50 kata total.",
+                f"Berikan insight bisnis hari ini, {datetime.now().strftime('%d %B %Y')}"
+            )
+        except Exception:
+            business_news = "• Pantau pergerakan kurs Rupiah hari ini\n• Cek update kebijakan ekspor terbaru"
+
+        # ── Rangkai briefing ───────────────────────────
+        now = datetime.now()
+        day_id = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"][now.weekday()]
+        date_str = now.strftime(f"{day_id}, %d %B %Y")
+
+        briefing_text = f"""☀️ Selamat Pagi, {user_name}!
+━━━━━━━━━━━━━━━
+
+📅 {date_str}
+🌤️ Cuaca {user_city}: {weather_text}
+
+📧 EMAIL HARI INI:
+{f"Ada {email_count} email baru" if email_count > 0 else "Inbox bersih ✨"}
+{chr(10).join(urgent_emails) if urgent_emails else ""}
+
+💬 WHATSAPP:
+{f"Ada {wa_count} pesan belum dibalas" if wa_count > 0 else "Semua pesan sudah dibalas ✅"}
+
+📋 AGENDA HARI INI:
+{chr(10).join(events_today) if events_today else "• Tidak ada jadwal hari ini"}
+
+📰 INSIGHT BISNIS:
+{business_news}
+
+💡 QUOTE HARI INI:
+"{quote}"
+
+━━━━━━━━━━━━━━━
+Semangat hari ini! 💪🔥
+— Orion AI"""
+
+        # ── Kirim FCM notif ────────────────────────────
+        await send_fcm_notification(
+            title=f"☀️ Selamat Pagi, {user_name}!",
+            body=f"📧 {email_count} email | 💬 {wa_count} WA | {weather_text}",
+            data={"type": "briefing", "content": briefing_text[:500]}
+        )
+
+        # ── Kirim via WA juga ──────────────────────────
+        try:
+            from app.services.whatsapp_service import send_whatsapp
+            user_phone = os.getenv("USER_PHONE", "")
+            if user_phone:
+                send_whatsapp(user_phone, briefing_text)
+                logger.info(f"[BRIEFING] Terkirim via WA ke {user_phone}")
+        except Exception as e:
+            logger.error(f"[BRIEFING WA] {e}")
+
+        logger.info("[BRIEFING] Daily Intelligence Briefing berhasil dikirim!")
+
+    except Exception as e:
+        logger.error(f"[BRIEFING ERROR] {e}")
 
 
 async def generate_weekly_report():
@@ -239,7 +387,6 @@ async def _generate_report_pdf(
 
         story.append(Paragraph("<b>📧 ANALISA EMAIL</b>",
             ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
-
         email_data = [
             ["Kategori", "Jumlah", "Status"],
             ["🔴 Urgent", str(urgent_count), "Perlu dibalas segera"],
@@ -262,7 +409,6 @@ async def _generate_report_pdf(
 
         story.append(Paragraph("<b>💬 ANALISA WHATSAPP</b>",
             ParagraphStyle("h2", fontSize=13, textColor=success, spaceAfter=8)))
-
         wa_rate = int((replied_wa/total_wa*100)) if total_wa > 0 else 0
         wa_data = [
             ["Metrik", "Nilai"],
@@ -288,7 +434,6 @@ async def _generate_report_pdf(
         if high_priority:
             story.append(Paragraph("<b>⚠️ TASK PRIORITAS TINGGI</b>",
                 ParagraphStyle("h2", fontSize=13, textColor=danger, spaceAfter=8)))
-
             task_data = [["Task", "Dari", "Deadline"]]
             for t in high_priority[:5]:
                 task_data.append([
@@ -296,7 +441,6 @@ async def _generate_report_pdf(
                     t.get("from", "")[:20],
                     t.get("due", "-")[:16] if t.get("due") else "-"
                 ])
-
             task_table = Table(task_data, colWidths=[8*cm, 5*cm, 4*cm])
             task_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), danger),
@@ -314,14 +458,12 @@ async def _generate_report_pdf(
         if customers:
             story.append(Paragraph("<b>👥 CUSTOMER AKTIF</b>",
                 ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
-
             cust_data = [["Nama", "Phone"]]
             for c in customers[:8]:
                 cust_data.append([
                     c.get("name", "Unknown")[:30],
                     c.get("phone", "")[:20],
                 ])
-
             cust_table = Table(cust_data, colWidths=[9*cm, 8*cm])
             cust_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), primary),
@@ -369,7 +511,7 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: Laporan mingguan setiap Senin jam 07.00 WIB (UTC = 00.00)
+        # Job 3: Laporan mingguan setiap Senin jam 07.00 WIB
         scheduler.add_job(
             generate_weekly_report,
             trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
@@ -377,8 +519,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
+        # Job 4: Daily Intelligence Briefing jam 06.00 WIB (UTC = 23.00)
+        scheduler.add_job(
+            daily_intelligence_briefing,
+            trigger=CronTrigger(hour=23, minute=0),
+            id="daily_briefing",
+            replace_existing=True,
+        )
+
         scheduler.start()
-        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit hemat, follow up: 1 jam, report: Senin 07.00 WIB)")
+        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit, follow up: 1 jam, report: Senin 07.00, briefing: 06.00 pagi)")
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
