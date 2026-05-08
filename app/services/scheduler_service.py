@@ -91,7 +91,7 @@ async def follow_up_check():
 
 
 async def generate_weekly_report():
-    """Generate laporan mingguan otomatis"""
+    """Generate laporan mingguan otomatis setiap Senin jam 07.00 WIB"""
     try:
         logger.info("[REPORT] Memulai generate laporan mingguan...")
 
@@ -210,7 +210,6 @@ async def _generate_report_pdf(
         ))
         story.append(HRFlowable(width="100%", thickness=2, color=primary, spaceAfter=16))
 
-        # Summary
         story.append(Paragraph("<b>📈 RINGKASAN</b>",
             ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
 
@@ -238,7 +237,6 @@ async def _generate_report_pdf(
         story.append(summary_table)
         story.append(Spacer(1, 0.5*cm))
 
-        # Email
         story.append(Paragraph("<b>📧 ANALISA EMAIL</b>",
             ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
 
@@ -262,7 +260,6 @@ async def _generate_report_pdf(
         story.append(email_table)
         story.append(Spacer(1, 0.5*cm))
 
-        # WA
         story.append(Paragraph("<b>💬 ANALISA WHATSAPP</b>",
             ParagraphStyle("h2", fontSize=13, textColor=success, spaceAfter=8)))
 
@@ -288,7 +285,6 @@ async def _generate_report_pdf(
         story.append(wa_table)
         story.append(Spacer(1, 0.5*cm))
 
-        # Task prioritas tinggi
         if high_priority:
             story.append(Paragraph("<b>⚠️ TASK PRIORITAS TINGGI</b>",
                 ParagraphStyle("h2", fontSize=13, textColor=danger, spaceAfter=8)))
@@ -315,7 +311,6 @@ async def _generate_report_pdf(
             story.append(task_table)
             story.append(Spacer(1, 0.5*cm))
 
-        # Customer aktif
         if customers:
             story.append(Paragraph("<b>👥 CUSTOMER AKTIF</b>",
                 ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
@@ -341,7 +336,6 @@ async def _generate_report_pdf(
             story.append(cust_table)
             story.append(Spacer(1, 0.5*cm))
 
-        # Footer
         story.append(HRFlowable(width="100%", thickness=0.5, color=gray, spaceAfter=6))
         story.append(Paragraph(
             f"<font size='9' color='#6B7280'>Laporan ini dibuat otomatis oleh Orion AI • {datetime.now().strftime('%d/%m/%Y %H:%M')} WIB</font>",
@@ -375,16 +369,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: TEST — laporan tiap 2 menit
+        # Job 3: Laporan mingguan setiap Senin jam 07.00 WIB (UTC = 00.00)
         scheduler.add_job(
             generate_weekly_report,
-            trigger=IntervalTrigger(minutes=2),
+            trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
             id="weekly_report",
             replace_existing=True,
         )
 
         scheduler.start()
-        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit, follow up: 1 jam, report: 2 menit TEST)")
+        logger.info("[SCHEDULER] Semua job dimulai (proactive: 30 menit hemat, follow up: 1 jam, report: Senin 07.00 WIB)")
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
