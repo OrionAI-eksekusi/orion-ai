@@ -92,6 +92,10 @@ class SaveBrainRequest(BaseModel):
     entity_type: str = "contact"
     follow_up_date: str = ""
 
+class MarkPaidRequest(BaseModel):
+    invoice_number: str
+    user_id: str = "default"
+
 
 # ── FCM Helper ─────────────────────────────────────────────
 def get_fcm_token(user_id: str = "default") -> str:
@@ -197,7 +201,6 @@ async def get_user_profile_endpoint(user_id: str):
 
 @router.post("/")
 async def chat(request: CommandRequest):
-    # Kirim user_id ke process_command untuk Personal Brain
     result = await process_command(request.message, request.user_id)
     return result
 
@@ -355,10 +358,73 @@ async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks
         return {"status": "error", "message": str(e)}
 
 
+# ── Invoice Endpoints ──────────────────────────────────────
+
+@router.get("/invoices/{user_id}")
+async def get_invoices(user_id: str):
+    """✅ Ambil semua invoice untuk dashboard Flutter"""
+    try:
+        if not user_id or user_id == "default":
+            return {"status": "error", "invoices": [], "message": "User tidak valid"}
+
+        from app.services.payment_service import get_all_invoices, init_payment_db
+        init_payment_db()
+        invoices = get_all_invoices(user_id)
+        return {"status": "success", "invoices": invoices}
+    except Exception as e:
+        return {"status": "error", "invoices": [], "message": str(e)}
+
+
+@router.post("/invoices/mark-paid")
+async def mark_invoice_paid_endpoint(request: MarkPaidRequest):
+    """✅ Tandai invoice lunas dari Flutter"""
+    try:
+        if not request.user_id or request.user_id == "default":
+            return {"status": "error", "message": "User tidak valid"}
+
+        from app.services.payment_service import mark_invoice_paid
+        success = mark_invoice_paid(request.invoice_number, request.user_id)
+        if success:
+            return {"status": "success", "message": f"Invoice {request.invoice_number} ditandai lunas"}
+        else:
+            return {"status": "error", "message": f"Invoice {request.invoice_number} tidak ditemukan"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/invoices/summary/{user_id}")
+async def get_invoice_summary(user_id: str):
+    """✅ Ambil summary invoice untuk dashboard cards"""
+    try:
+        if not user_id or user_id == "default":
+            return {"status": "error", "summary": {}}
+
+        from app.services.payment_service import get_all_invoices, init_payment_db
+        init_payment_db()
+        invoices = get_all_invoices(user_id)
+
+        unpaid = [i for i in invoices if i['status'] == 'unpaid']
+        paid = [i for i in invoices if i['status'] == 'paid']
+        total_unpaid = sum(i['amount'] for i in unpaid)
+        total_paid = sum(i['amount'] for i in paid)
+
+        return {
+            "status": "success",
+            "summary": {
+                "total_invoices": len(invoices),
+                "unpaid_count": len(unpaid),
+                "paid_count": len(paid),
+                "total_unpaid": total_unpaid,
+                "total_paid": total_paid,
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "summary": {}, "message": str(e)}
+
+
 # ── Personal Brain Endpoints ───────────────────────────────
 @router.post("/brain/save")
 async def brain_save(request: SaveBrainRequest):
-    """Simpan entri ke Personal Brain"""
     try:
         save_brain_entry(
             user_id=request.user_id,
@@ -374,7 +440,6 @@ async def brain_save(request: SaveBrainRequest):
 
 @router.get("/brain/list/{user_id}")
 async def brain_list(user_id: str):
-    """Ambil semua entri Personal Brain"""
     try:
         entries = get_all_brain_entries(user_id)
         return {"status": "success", "entries": entries}
@@ -384,7 +449,6 @@ async def brain_list(user_id: str):
 
 @router.get("/brain/search/{user_id}")
 async def brain_search(user_id: str, q: str = ""):
-    """Cari di Personal Brain"""
     try:
         results = search_brain(user_id, q)
         return {"status": "success", "results": results}
@@ -394,7 +458,6 @@ async def brain_search(user_id: str, q: str = ""):
 
 @router.get("/brain/follow-ups/{user_id}")
 async def brain_follow_ups(user_id: str):
-    """Ambil follow up yang pending"""
     try:
         follow_ups = get_pending_follow_ups(user_id)
         return {"status": "success", "follow_ups": follow_ups}
@@ -414,8 +477,6 @@ async def transcribe_meeting(
 ):
     try:
         filename = audio.filename or "audio.mp3"
-        print(f"[MEETING] Upload: {filename}")
-
         suffix = os.path.splitext(filename)[1] or ".mp3"
         with tempfile.NamedTemporaryFile(
             delete=False, suffix=suffix, dir="/tmp"
@@ -423,8 +484,6 @@ async def transcribe_meeting(
             content = await audio.read()
             tmp.write(content)
             tmp_path = tmp.name
-
-        print(f"[MEETING] File tersimpan: {tmp_path} ({len(content)} bytes)")
 
         emails_list = []
         if participant_emails:
@@ -458,7 +517,6 @@ async def _process_meeting_background(
     try:
         from app.services.transcriber_service import process_meeting
 
-        print(f"[MEETING BG] Mulai proses: {meeting_title}")
         result = await process_meeting(
             audio_path=audio_path,
             meeting_title=meeting_title,
