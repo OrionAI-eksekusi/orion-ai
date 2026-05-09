@@ -70,7 +70,6 @@ async def follow_up_check():
             phone = msg["phone"]
             follow_up_count = msg.get("follow_up_count", 0)
 
-            # Stop kalau sudah 2x follow up
             if follow_up_count >= 2:
                 logger.info(f"[FOLLOWUP] {phone} sudah 2x follow up, skip")
                 continue
@@ -80,13 +79,11 @@ async def follow_up_check():
                 name = memory.get("name", "") if memory else ""
 
                 if follow_up_count == 0:
-                    # Follow up pertama — friendly
                     if name:
                         follow_up = f"Halo {name}! 😊 Ada yang bisa kami bantu? Kami siap melayani kamu."
                     else:
                         follow_up = "Halo! 😊 Ada yang bisa kami bantu? Kami siap melayani Anda."
                 else:
-                    # Follow up kedua — lebih singkat
                     if name:
                         follow_up = f"Halo {name}, kami ingin memastikan apakah ada yang bisa kami bantu? 🙏"
                     else:
@@ -104,7 +101,7 @@ async def follow_up_check():
 
 
 async def brain_follow_up_check():
-    """Cek Personal Brain follow up yang jatuh tempo — kirim notif ke semua user"""
+    """Cek Personal Brain follow up yang jatuh tempo"""
     try:
         logger.info("[BRAIN FOLLOWUP] Cek Personal Brain follow up...")
         from app.services.database_service import get_all_active_users
@@ -112,9 +109,7 @@ async def brain_follow_up_check():
         from app.routers.chat import send_fcm_notification
 
         users = get_all_active_users()
-
         if not users:
-            # Fallback ke default user
             users = [{"user_id": "default", "name": ""}]
 
         for user in users:
@@ -129,7 +124,6 @@ async def brain_follow_up_check():
                     notes = item["notes"]
                     follow_up_count = item.get("follow_up_count", 0)
 
-                    # Notif ke HP
                     await send_fcm_notification(
                         title=f"⏰ Follow Up: {name}",
                         body=f"Jadwal follow up hari ini! {notes[:60]}",
@@ -141,7 +135,6 @@ async def brain_follow_up_check():
                         user_id=user_id
                     )
 
-                    # Mark sudah dikirim
                     mark_brain_follow_up_sent(user_id, name)
                     logger.info(f"[BRAIN FOLLOWUP] Notif terkirim: {name} (user: {user_id})")
 
@@ -152,8 +145,97 @@ async def brain_follow_up_check():
         logger.error(f"[BRAIN FOLLOWUP CHECK ERROR] {e}")
 
 
+async def payment_reminder_check():
+    """Cek invoice jatuh tempo dan kirim WA reminder otomatis — max 3x"""
+    try:
+        logger.info("[PAYMENT] Cek invoice jatuh tempo...")
+        from app.services.payment_service import (
+            get_due_invoices, increment_reminder_count,
+            format_amount, init_payment_db
+        )
+        from app.services.database_service import get_all_active_users
+        from app.services.whatsapp_service import send_whatsapp
+        from app.routers.chat import send_fcm_notification
+
+        init_payment_db()
+        users = get_all_active_users()
+        if not users:
+            users = [{"user_id": "default"}]
+
+        for user in users:
+            user_id = user["user_id"]
+            try:
+                due_invoices = get_due_invoices(user_id)
+                if not due_invoices:
+                    logger.info(f"[PAYMENT] Tidak ada invoice jatuh tempo untuk {user_id}")
+                    continue
+
+                for inv in due_invoices:
+                    phone = inv.get("customer_phone", "")
+                    name = inv.get("customer_name", "Customer")
+                    amount = format_amount(inv.get("amount", 0))
+                    inv_number = inv.get("invoice_number", "")
+                    due_date = inv.get("due_date", "")
+                    reminder_count = inv.get("reminder_count", 0)
+
+                    # Pilih pesan berdasarkan reminder ke berapa
+                    if reminder_count == 0:
+                        wa_msg = (
+                            f"Halo {name}! 😊\n\n"
+                            f"Mengingatkan bahwa invoice Anda:\n"
+                            f"📄 No: {inv_number}\n"
+                            f"💰 Nominal: {amount}\n"
+                            f"📅 Jatuh Tempo: {due_date}\n\n"
+                            f"Mohon segera dilakukan pembayaran ya. "
+                            f"Terima kasih! 🙏"
+                        )
+                    elif reminder_count == 1:
+                        wa_msg = (
+                            f"Halo {name}, 😊\n\n"
+                            f"Reminder ke-2 untuk invoice {inv_number} "
+                            f"sebesar {amount} yang jatuh tempo {due_date}.\n\n"
+                            f"Apakah ada kendala pembayaran? "
+                            f"Hubungi kami jika butuh bantuan. 🙏"
+                        )
+                    else:
+                        wa_msg = (
+                            f"Halo {name},\n\n"
+                            f"Ini adalah reminder terakhir untuk invoice "
+                            f"{inv_number} sebesar {amount}.\n\n"
+                            f"Mohon segera konfirmasi pembayaran. "
+                            f"Terima kasih. 🙏"
+                        )
+
+                    # Kirim WA kalau ada nomor
+                    if phone:
+                        try:
+                            send_whatsapp(phone, wa_msg)
+                            logger.info(f"[PAYMENT] WA reminder terkirim ke {name} ({phone})")
+                        except Exception as e:
+                            logger.error(f"[PAYMENT WA ERROR] {e}")
+
+                    # Increment reminder count
+                    increment_reminder_count(inv_number, user_id)
+
+                    # Notif ke owner
+                    await send_fcm_notification(
+                        title=f"💰 Reminder Invoice: {name}",
+                        body=f"{inv_number} — {amount} — Reminder ke-{reminder_count+1}",
+                        data={"type": "payment_reminder", "invoice": inv_number},
+                        user_id=user_id
+                    )
+
+                logger.info(f"[PAYMENT] {len(due_invoices)} reminder terkirim untuk {user_id}")
+
+            except Exception as e:
+                logger.error(f"[PAYMENT ERROR] user {user_id}: {e}")
+
+    except Exception as e:
+        logger.error(f"[PAYMENT REMINDER ERROR] {e}")
+
+
 async def daily_intelligence_briefing():
-    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB ke semua user"""
+    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB"""
     try:
         logger.info("[BRIEFING] Memulai Daily Intelligence Briefing...")
 
@@ -166,7 +248,6 @@ async def daily_intelligence_briefing():
         from datetime import datetime
         import os
 
-        # ── Cuaca ──────────────────────────────────────
         user_city = os.getenv("USER_CITY", "Jakarta")
         weather_text = "Tidak tersedia"
         try:
@@ -180,7 +261,6 @@ async def daily_intelligence_briefing():
         except Exception:
             pass
 
-        # ── Email baru ─────────────────────────────────
         email_count = 0
         urgent_emails = []
         try:
@@ -207,12 +287,10 @@ async def daily_intelligence_briefing():
         except Exception as e:
             logger.error(f"[BRIEFING EMAIL] {e}")
 
-        # ── WA belum dibalas ───────────────────────────
         wa_messages = get_wa_messages(limit=20)
         wa_unreplied = [m for m in wa_messages if not m.get("replied")]
         wa_count = len(wa_unreplied)
 
-        # ── Kalender hari ini ──────────────────────────
         events_today = []
         try:
             events = get_upcoming_events(max_results=5)
@@ -224,7 +302,6 @@ async def daily_intelligence_briefing():
         except Exception:
             pass
 
-        # ── Quote motivasi ─────────────────────────────
         quote = ""
         try:
             quote = await call_llm(
@@ -234,7 +311,6 @@ async def daily_intelligence_briefing():
         except Exception:
             quote = "Hari ini adalah kesempatan baru untuk jadi lebih baik!"
 
-        # ── Berita bisnis ──────────────────────────────
         business_news = ""
         try:
             business_news = await call_llm(
@@ -244,12 +320,10 @@ async def daily_intelligence_briefing():
         except Exception:
             business_news = "• Pantau pergerakan kurs Rupiah hari ini\n• Cek update kebijakan ekspor terbaru"
 
-        # ── Rangkai briefing ───────────────────────────
         now = datetime.now()
         day_id = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"][now.weekday()]
         date_str = now.strftime(f"{day_id}, %d %B %Y")
 
-        # ── Kirim ke semua user aktif ──────────────────
         users = get_all_active_users()
         if not users:
             users = [{"user_id": "default", "name": os.getenv("USER_NAME", "Bos"),
@@ -261,7 +335,7 @@ async def daily_intelligence_briefing():
             user_phone = user.get("phone") or os.getenv("USER_PHONE", "")
             city = user.get("city") or user_city
 
-            # Cek personal brain follow up hari ini
+            # Cek personal brain follow up
             brain_reminder = ""
             try:
                 from app.services.memory_service import get_pending_follow_ups
@@ -269,6 +343,19 @@ async def daily_intelligence_briefing():
                 if pending:
                     names = [p["name"] for p in pending[:3]]
                     brain_reminder = f"\n\n⏰ FOLLOW UP HARI INI:\n" + "\n".join([f"• {n}" for n in names])
+            except Exception:
+                pass
+
+            # Cek invoice jatuh tempo
+            invoice_reminder = ""
+            try:
+                from app.services.payment_service import get_due_invoices, format_amount, init_payment_db
+                init_payment_db()
+                due_invoices = get_due_invoices(user_id)
+                if due_invoices:
+                    invoice_reminder = f"\n\n💰 TAGIHAN JATUH TEMPO:\n"
+                    for inv in due_invoices[:3]:
+                        invoice_reminder += f"• {inv['customer_name']} — {format_amount(inv['amount'])}\n"
             except Exception:
                 pass
 
@@ -286,7 +373,7 @@ async def daily_intelligence_briefing():
 {f"Ada {wa_count} pesan belum dibalas" if wa_count > 0 else "Semua pesan sudah dibalas ✅"}
 
 📋 AGENDA HARI INI:
-{chr(10).join(events_today) if events_today else "• Tidak ada jadwal hari ini"}{brain_reminder}
+{chr(10).join(events_today) if events_today else "• Tidak ada jadwal hari ini"}{brain_reminder}{invoice_reminder}
 
 📰 INSIGHT BISNIS:
 {business_news}
@@ -298,7 +385,6 @@ async def daily_intelligence_briefing():
 Semangat hari ini! 💪🔥
 — Orion AI"""
 
-            # Kirim FCM
             await send_fcm_notification(
                 title=f"☀️ Selamat Pagi, {user_name}!",
                 body=f"📧 {email_count} email | 💬 {wa_count} WA | {weather_text}",
@@ -306,7 +392,6 @@ Semangat hari ini! 💪🔥
                 user_id=user_id
             )
 
-            # Kirim via WA
             try:
                 from app.services.whatsapp_service import send_whatsapp
                 if user_phone:
@@ -610,11 +695,19 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 5: Personal Brain follow up check jam 08.00 WIB (UTC=01.00)
+        # Job 5: Personal Brain follow up jam 08.00 WIB (UTC=01.00)
         scheduler.add_job(
             brain_follow_up_check,
             trigger=CronTrigger(hour=1, minute=0),
             id="brain_followup",
+            replace_existing=True,
+        )
+
+        # Job 6: Payment reminder jam 09.00 WIB (UTC=02.00)
+        scheduler.add_job(
+            payment_reminder_check,
+            trigger=CronTrigger(hour=2, minute=0),
+            id="payment_reminder",
             replace_existing=True,
         )
 
@@ -625,7 +718,8 @@ def start_scheduler():
             "  - Follow up WA: 1 jam (max 2x)\n"
             "  - Report: Senin 07.00 WIB\n"
             "  - Briefing: 06.00 pagi\n"
-            "  - Brain Follow Up: 08.00 pagi"
+            "  - Brain Follow Up: 08.00 pagi\n"
+            "  - Payment Reminder: 09.00 pagi"
         )
 
     except Exception as e:
