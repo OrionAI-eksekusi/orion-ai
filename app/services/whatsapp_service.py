@@ -3,17 +3,46 @@ import requests
 import time
 from dotenv import load_dotenv
 from app.services.database_service import save_wa_message
+
 load_dotenv()
 
 FONNTE_TOKEN = os.getenv("FONNTE_TOKEN")
+WA_GATEWAY_URL = os.getenv("WA_GATEWAY_URL", "http://localhost:3000")
 
 
 def send_whatsapp(phone: str, message: str):
+    """Kirim WA via Fonnte — untuk broadcast"""
     url = "https://api.fonnte.com/send"
     headers = {"Authorization": FONNTE_TOKEN}
     data = {"target": phone, "message": message}
     response = requests.post(url, headers=headers, data=data)
     return response.json()
+
+
+def send_whatsapp_baileys(phone: str, message: str) -> dict:
+    """
+    Kirim WA via Baileys (worker Railway) — untuk tagihan & reminder.
+    Pakai koneksi WA yang sudah di-scan user di Orion.
+    Tidak perlu Fonnte sama sekali.
+    """
+    try:
+        # Normalize nomor — pastikan format 62xxx
+        phone_clean = phone.strip().replace(" ", "").replace("-", "")
+        if phone_clean.startswith("0"):
+            phone_clean = "62" + phone_clean[1:]
+        elif not phone_clean.startswith("62"):
+            phone_clean = "62" + phone_clean
+
+        response = requests.post(
+            f"{WA_GATEWAY_URL}/send",
+            json={"phone": phone_clean, "message": message},
+            timeout=15
+        )
+        result = response.json()
+        return result
+    except Exception as e:
+        print(f"[BAILEYS SEND ERROR] {e}")
+        return {"status": False, "error": str(e)}
 
 
 def send_invoice_whatsapp(
@@ -27,7 +56,7 @@ def send_invoice_whatsapp(
     reminder_count: int = 1
 ) -> dict:
     """
-    Kirim WA tagihan ke customer.
+    Kirim WA tagihan ke customer via Baileys.
     is_reminder=False → pesan pertama saat invoice dibuat
     is_reminder=True  → pesan reminder saat jatuh tempo
     """
@@ -53,7 +82,7 @@ _Terima kasih atas kepercayaan Anda!_"""
     else:
         # ── Pesan reminder saat jatuh tempo ──
         if reminder_count == 1:
-            message = f"""Halo {customer_name}, 
+            message = f"""Halo {customer_name},
 
 Kami mengingatkan bahwa tagihan berikut sudah jatuh tempo:
 
@@ -61,7 +90,7 @@ Kami mengingatkan bahwa tagihan berikut sudah jatuh tempo:
 💰 *Nominal:* {amount_str}
 📅 *Jatuh Tempo:* {due_date}
 
-Mohon segera lakukan pembayaran. 
+Mohon segera lakukan pembayaran.
 Konfirmasi langsung balas pesan ini ya! 🙏"""
 
         elif reminder_count == 2:
@@ -88,15 +117,8 @@ Ini adalah pengingat terakhir untuk tagihan:
 Mohon segera hubungi kami jika ada kendala pembayaran.
 Terima kasih. 🙏"""
 
-    # Normalize nomor — pastikan format 62xxx
-    phone_clean = phone.strip().replace(" ", "").replace("-", "")
-    if phone_clean.startswith("0"):
-        phone_clean = "62" + phone_clean[1:]
-    elif not phone_clean.startswith("62"):
-        phone_clean = "62" + phone_clean
-
-    result = send_whatsapp(phone_clean, message)
-    return result
+    # ✅ Kirim via Baileys — pakai WA yang sudah connect di Orion
+    return send_whatsapp_baileys(phone, message)
 
 
 def receive_whatsapp_message(data: dict):
