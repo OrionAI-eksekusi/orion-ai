@@ -26,7 +26,6 @@ def send_whatsapp_baileys(phone: str, message: str) -> dict:
     Tidak perlu Fonnte sama sekali.
     """
     try:
-        # Normalize nomor — pastikan format 62xxx
         phone_clean = phone.strip().replace(" ", "").replace("-", "")
         if phone_clean.startswith("0"):
             phone_clean = "62" + phone_clean[1:]
@@ -34,7 +33,7 @@ def send_whatsapp_baileys(phone: str, message: str) -> dict:
             phone_clean = "62" + phone_clean
 
         response = requests.post(
-            f"{WA_GATEWAY_URL}/send",
+            f"{WA_GATEWAY_URL}/send-message",
             json={"phone": phone_clean, "message": message},
             timeout=15
         )
@@ -60,11 +59,9 @@ def send_invoice_whatsapp(
     is_reminder=False → pesan pertama saat invoice dibuat
     is_reminder=True  → pesan reminder saat jatuh tempo
     """
-    # Format nominal ke Rupiah
     amount_str = f"Rp {amount:,.0f}".replace(",", ".")
 
     if not is_reminder:
-        # ── Pesan pertama saat invoice dibuat ──
         message = f"""Halo {customer_name}! 👋
 
 Kami ingin menginformasikan tagihan berikut:
@@ -80,7 +77,6 @@ Konfirmasi pembayaran bisa langsung balas pesan ini. 🙏
 _Terima kasih atas kepercayaan Anda!_"""
 
     else:
-        # ── Pesan reminder saat jatuh tempo ──
         if reminder_count == 1:
             message = f"""Halo {customer_name},
 
@@ -105,7 +101,6 @@ Ini adalah pengingat ke-2 untuk tagihan yang belum dibayar:
 Harap segera diselesaikan. Terima kasih. 🙏"""
 
         else:
-            # Reminder terakhir (ke-3)
             message = f"""Halo {customer_name},
 
 Ini adalah pengingat terakhir untuk tagihan:
@@ -117,7 +112,6 @@ Ini adalah pengingat terakhir untuk tagihan:
 Mohon segera hubungi kami jika ada kendala pembayaran.
 Terima kasih. 🙏"""
 
-    # ✅ Kirim via Baileys — pakai WA yang sudah connect di Orion
     return send_whatsapp_baileys(phone, message)
 
 
