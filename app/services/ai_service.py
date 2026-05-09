@@ -32,6 +32,17 @@ def is_brain_command(message: str) -> bool:
     ]
     return any(kw in message.lower() for kw in keywords)
 
+# ── Detect Payment/Invoice commands ──────────────────────
+def is_payment_command(message: str) -> bool:
+    keywords = [
+        'tagih', 'nagih', 'invoice', 'bayar', 'pembayaran',
+        'reminder bayar', 'ingatkan bayar', 'belum bayar',
+        'jatuh tempo', 'cicilan', 'tunggakan', 'lunas',
+        'sudah bayar', 'konfirmasi bayar', 'bukti transfer',
+        'daftar invoice', 'list tagihan', 'tagihan'
+    ]
+    return any(kw in message.lower() for kw in keywords)
+
 # ── Detect request quotation ──────────────────────────────
 def is_quote_request(message: str) -> bool:
     keywords = [
@@ -76,7 +87,6 @@ Respond HANYA dengan JSON."""
 
 # ── Extract Brain info dari perintah ─────────────────────
 async def extract_brain_info(message: str) -> dict:
-    """Extract info untuk Personal Brain dari perintah user"""
     system_prompt = """Dari perintah berikut, ekstrak informasi untuk Personal Brain dalam JSON:
 {
     "action": "save/query/list/followup",
@@ -121,7 +131,176 @@ async def process_command(message: str, user_id: str = "default"):
     is_quote = any(word in message.lower() for word in quote_keywords)
     is_file_send = any(word in message.lower() for word in file_keywords)
     is_brain = is_brain_command(message)
+    is_payment = is_payment_command(message)
     casual = is_casual_message(message)
+
+    # ── Handle Payment / Invoice ──────────────────────────
+    if is_payment and not is_email_command:
+        try:
+            from app.services.payment_service import (
+                create_invoice, get_all_invoices, get_unpaid_invoices,
+                mark_invoice_paid, extract_invoice_from_command,
+                format_amount, init_payment_db
+            )
+            init_payment_db()
+
+            msg_lower = message.lower()
+
+            # Cek apakah konfirmasi lunas
+            if any(kw in msg_lower for kw in ['lunas', 'sudah bayar', 'konfirmasi bayar', 'bukti transfer']):
+                reply = "✅ Terima kasih! Untuk konfirmasi pembayaran, sebutkan nomor invoice nya bro!\n\nContoh: 'INV-20260509123456 sudah lunas'"
+
+                # Cek ada nomor invoice di pesan
+                inv_match = re.search(r'INV-\d+', message.upper())
+                if inv_match:
+                    inv_number = inv_match.group(0)
+                    success = mark_invoice_paid(inv_number, user_id)
+                    if success:
+                        reply = f"✅ Invoice **{inv_number}** sudah ditandai LUNAS!\nReminder otomatis dihentikan."
+                    else:
+                        reply = f"❌ Invoice **{inv_number}** tidak ditemukan."
+
+                return {
+                    "status": "success",
+                    "message": message,
+                    "response": reply,
+                    "emails": [],
+                    "parsed": {
+                        "intent": "payment",
+                        "summary": reply,
+                        "action": "mark_paid",
+                        "needs_confirmation": False,
+                        "draft": "",
+                        "reply": reply,
+                        "reply_to": "",
+                        "subject": ""
+                    }
+                }
+
+            # Cek daftar invoice
+            if any(kw in msg_lower for kw in ['daftar invoice', 'list tagihan', 'semua tagihan', 'tagihan saya']):
+                invoices = get_all_invoices(user_id)
+                if not invoices:
+                    reply = "📭 Belum ada invoice. Buat dulu dengan: 'tagih [nama] [nominal] [jatuh tempo]'"
+                else:
+                    unpaid = [i for i in invoices if i['status'] == 'unpaid']
+                    paid = [i for i in invoices if i['status'] == 'paid']
+                    reply = f"📋 **Daftar Invoice** ({len(invoices)} total)\n\n"
+                    if unpaid:
+                        reply += f"⏳ **Belum Lunas ({len(unpaid)}):**\n"
+                        for inv in unpaid[:5]:
+                            reply += f"• {inv['invoice_number']} — {inv['customer_name']} — {format_amount(inv['amount'])} — Jatuh tempo: {inv['due_date']}\n"
+                    if paid:
+                        reply += f"\n✅ **Sudah Lunas ({len(paid)}):**\n"
+                        for inv in paid[:3]:
+                            reply += f"• {inv['invoice_number']} — {inv['customer_name']} — {format_amount(inv['amount'])}\n"
+
+                return {
+                    "status": "success",
+                    "message": message,
+                    "response": reply,
+                    "emails": [],
+                    "parsed": {
+                        "intent": "payment",
+                        "summary": reply,
+                        "action": "list_invoices",
+                        "needs_confirmation": False,
+                        "draft": "",
+                        "reply": reply,
+                        "reply_to": "",
+                        "subject": ""
+                    }
+                }
+
+            # Buat invoice baru
+            invoice_info = await extract_invoice_from_command(message)
+            customer_name = invoice_info.get("customer_name", "")
+            customer_phone = invoice_info.get("customer_phone", "")
+            customer_email = invoice_info.get("customer_email", "")
+            amount = invoice_info.get("amount", 0)
+            description = invoice_info.get("description", "Tagihan")
+            due_date = invoice_info.get("due_date", "")
+
+            if not customer_name or amount <= 0:
+                reply = "Siap! 💰 Sebutkan detail tagihannya bro!\n\nContoh:\n'tagih Pak Budi 500rb besok'\n'invoice Bu Sari 1.5 juta minggu depan 081234567'"
+                return {
+                    "status": "success",
+                    "message": message,
+                    "response": reply,
+                    "emails": [],
+                    "parsed": {
+                        "intent": "payment",
+                        "summary": reply,
+                        "action": "tanya_invoice",
+                        "needs_confirmation": False,
+                        "draft": "",
+                        "reply": reply,
+                        "reply_to": "",
+                        "subject": ""
+                    }
+                }
+
+            # Buat invoice
+            invoice = create_invoice(
+                user_id=user_id,
+                customer_name=customer_name,
+                amount=amount,
+                due_date=due_date,
+                description=description,
+                customer_phone=customer_phone,
+                customer_email=customer_email
+            )
+
+            reply = f"✅ Invoice berhasil dibuat!\n\n"
+            reply += f"📄 **{invoice['invoice_number']}**\n"
+            reply += f"👤 Customer: {customer_name}\n"
+            reply += f"💰 Nominal: {format_amount(amount)}\n"
+            reply += f"📅 Jatuh Tempo: {due_date}\n"
+            reply += f"📝 Keterangan: {description}\n\n"
+
+            if customer_phone:
+                reply += f"📱 Orion akan auto WA reminder ke {customer_phone} saat jatuh tempo!\n"
+                reply += f"⚡ Maksimal 3x reminder, lalu berhenti otomatis."
+            else:
+                reply += f"💡 Tambahkan nomor WA customer biar Orion bisa auto reminder!"
+
+            return {
+                "status": "success",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "payment",
+                    "summary": reply,
+                    "action": "create_invoice",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": "",
+                    "invoice": invoice
+                }
+            }
+
+        except Exception as e:
+            print(f"[PAYMENT ERROR] {e}")
+            reply = f"❌ Gagal proses payment: {str(e)}"
+            return {
+                "status": "error",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "payment",
+                    "summary": reply,
+                    "action": "error",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
 
     # ── Handle Personal Brain ─────────────────────────────
     if is_brain and not is_email_command and not is_broadcast:
@@ -175,10 +354,8 @@ async def process_command(message: str, user_id: str = "default"):
                         reply += f"• **{e['name']}** ({e['type']}){follow_up_info}{done_info}\n"
 
             else:
-                # Query — cari di brain
                 results = search_brain(user_id, query)
                 if not results:
-                    # Coba cari langsung
                     entry = get_brain_entry(user_id, query)
                     if entry:
                         results = [entry]
