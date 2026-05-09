@@ -112,8 +112,37 @@ def format_meeting_summary(analysis: dict, transcript: str) -> str:
 
     text += f"""
 ━━━━━━━━━━━━━━━━━━━━━━
-🤖 Notulen ini dibuat otomatis oleh Orion AI
+🤖 Notulen ini dibuat otomatis oleh Orion AI"""
+
+    return text
+
+
+def format_meeting_wa(analysis: dict) -> str:
+    """Format ringkasan meeting yang lebih ringkas untuk WA"""
+    from datetime import datetime
+    now = datetime.now().strftime("%d %B %Y %H:%M")
+
+    text = f"""📋 *NOTULEN MEETING*
+*{analysis.get('title', 'Meeting')}*
+📅 {now}
+
+📝 *Ringkasan:*
+{analysis.get('summary', '')}
+
+🎯 *Action Items:*
 """
+    action_items = analysis.get('action_items', [])
+    if action_items:
+        for item in action_items:
+            deadline = f" _(⏰ {item['deadline']})_" if item.get('deadline') else ""
+            text += f"• *{item.get('person', '?')}*: {item.get('task', '')}{deadline}\n"
+    else:
+        text += "• Tidak ada action items\n"
+
+    if analysis.get('next_meeting'):
+        text += f"\n📅 *Meeting Berikutnya:*\n{analysis['next_meeting']}\n"
+
+    text += "\n_Notulen otomatis oleh Orion AI_ 🤖"
     return text
 
 
@@ -121,10 +150,11 @@ async def process_meeting(
     audio_path: str,
     meeting_title: str = "Meeting",
     participant_emails: list = [],
+    participant_phones: list = [],
     language: str = "id"
 ) -> dict:
     """
-    Full pipeline: audio → transkrip → analisa → kirim email
+    Full pipeline: audio → transkrip → analisa → kirim email + WA
     Returns: dict dengan transkrip, analisa, dan summary
     """
     try:
@@ -139,6 +169,10 @@ async def process_meeting(
 
         # Step 3: Format summary
         summary_text = format_meeting_summary(analysis, transcript)
+        wa_text = format_meeting_wa(analysis)
+
+        emails_sent = 0
+        wa_sent = 0
 
         # Step 4: Kirim ke peserta via email
         if participant_emails:
@@ -150,16 +184,36 @@ async def process_meeting(
                         subject=f"📋 Notulen: {meeting_title}",
                         body=summary_text
                     )
-                    print(f"[MEETING] Notulen terkirim ke {email}")
+                    emails_sent += 1
+                    print(f"[MEETING] Notulen terkirim ke email {email}")
                 except Exception as e:
                     print(f"[MEETING EMAIL ERROR] {email}: {e}")
+
+        # ✅ Step 5: Kirim ke peserta via WA
+        if participant_phones:
+            from app.services.whatsapp_service import send_whatsapp_baileys
+            for phone in participant_phones:
+                try:
+                    # Normalize nomor
+                    phone_clean = phone.strip().replace(" ", "").replace("-", "")
+                    if phone_clean.startswith("0"):
+                        phone_clean = "62" + phone_clean[1:]
+                    elif not phone_clean.startswith("62"):
+                        phone_clean = "62" + phone_clean
+
+                    send_whatsapp_baileys(phone_clean, wa_text)
+                    wa_sent += 1
+                    print(f"[MEETING] Notulen terkirim ke WA {phone_clean}")
+                except Exception as e:
+                    print(f"[MEETING WA ERROR] {phone}: {e}")
 
         return {
             "status": "success",
             "transcript": transcript,
             "analysis": analysis,
             "summary": summary_text,
-            "emails_sent": len(participant_emails)
+            "emails_sent": emails_sent,
+            "wa_sent": wa_sent
         }
 
     except Exception as e:
@@ -169,5 +223,7 @@ async def process_meeting(
             "message": str(e),
             "transcript": "",
             "analysis": {},
-            "summary": ""
+            "summary": "",
+            "emails_sent": 0,
+            "wa_sent": 0
         }
