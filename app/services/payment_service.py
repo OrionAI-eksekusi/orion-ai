@@ -239,10 +239,7 @@ def get_all_invoices(user_id: str) -> list:
 
 
 def send_invoice_wa_manual(invoice_number: str, user_id: str) -> dict:
-    """
-    Mode Manual: Kirim WA tagihan sekarang berdasarkan perintah user.
-    Contoh: 'kirim tagihan INV-xxx'
-    """
+    """Mode Manual: Kirim WA tagihan sekarang berdasarkan perintah user"""
     if not user_id or user_id == "default":
         return {"status": "error", "message": "User tidak valid"}
 
@@ -285,7 +282,7 @@ async def extract_invoice_from_command(message: str) -> dict:
     system_prompt = f"""Dari perintah berikut, ekstrak informasi invoice dalam JSON:
 {{
     "customer_name": "nama customer",
-    "customer_phone": "nomor WA customer (62xxx) jika ada, kosong jika tidak",
+    "customer_phone": "nomor WA customer format 62xxx tanpa strip/spasi/plus, kosong jika tidak ada",
     "customer_email": "email customer jika ada, kosong jika tidak",
     "amount": 0,
     "description": "deskripsi tagihan",
@@ -295,20 +292,50 @@ async def extract_invoice_from_command(message: str) -> dict:
 Hari ini: {today}
 Besok: {tomorrow}
 
-Contoh:
-- "tagih Pak Budi 500rb besok" → due_date: {tomorrow}
-- "invoice Bu Sari 1.5 juta minggu depan" → due_date: 7 hari dari sekarang
-- "nagih 081234 250000 hari ini" → customer_phone: 62081234, due_date: {today}
+ATURAN NOMINAL — konversi semua format ke angka bulat:
+- "500rb" / "500 ribu" / "500k" → 500000
+- "1 juta" / "1jt" / "1.000.000" → 1000000
+- "1.5 juta" / "1,5 juta" / "1.5jt" → 1500000
+- "250rb" → 250000
+- "2 juta" → 2000000
 
-PENTING: Jika tidak ada nama customer yang jelas → customer_name kosong "".
-Jika tidak ada nominal → amount: 0.
+ATURAN NOMOR HP — normalisasi ke format 62xxx:
+- "08123456789" → "628123456789"
+- "+62 813-1249-0171" → "6281312490171"
+- "+6281312490171" → "6281312490171"
+- "62813-1249-0171" → "6281312490171"
+- Hapus semua karakter: +, -, spasi
 
-Respond HANYA dengan JSON."""
+ATURAN WAKTU:
+- "sekarang" / "hari ini" → {today}
+- "besok" → {tomorrow}
+- "minggu depan" → 7 hari dari sekarang
+- "2 minggu" → 14 hari dari sekarang
+- "bulan depan" → 30 hari dari sekarang
+
+PENTING:
+- Jika tidak ada nama customer yang jelas → customer_name: ""
+- Jika tidak ada nominal → amount: 0
+- Jangan pernah return amount: 0 jika ada angka di pesan
+
+Respond HANYA dengan JSON murni tanpa backtick."""
 
     try:
         response = await call_llm(system_prompt, message)
         clean = response.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean)
+        data = json.loads(clean)
+
+        # ✅ Normalize nomor sebagai safety net
+        phone = data.get("customer_phone", "")
+        if phone:
+            phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+            if phone.startswith("0"):
+                phone = "62" + phone[1:]
+            elif not phone.startswith("62"):
+                phone = "62" + phone
+            data["customer_phone"] = phone
+
+        return data
     except Exception as e:
         print(f"[INVOICE EXTRACT ERROR] {e}")
         return {
