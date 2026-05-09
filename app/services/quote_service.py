@@ -14,13 +14,11 @@ QUOTE_DIR = "/tmp/quotes"
 def _load_profile(user_id: str = "default") -> dict:
     """Load business profile per user dari database atau file"""
     try:
-        # Coba load dari database per user dulu
         profile_path = f"profiles/{user_id}_business.json"
         if os.path.exists(profile_path):
             with open(profile_path, "r") as f:
                 return json.load(f)
 
-        # Fallback ke WA gateway profile
         wa_profile_paths = [
             "/app/business_profile.json",
             "business_profile.json",
@@ -33,7 +31,6 @@ def _load_profile(user_id: str = "default") -> dict:
     except:
         pass
 
-    # Default profile kalau tidak ada
     return {
         "name": "Bisnis Anda",
         "field": "",
@@ -78,12 +75,10 @@ def generate_quote_pdf(
     styles = getSampleStyleSheet()
     story = []
 
-    # ── Colors ──
     primary = colors.HexColor("#1A3A8F")
     gray = colors.HexColor("#6B7280")
     light_gray = colors.HexColor("#F3F4F6")
 
-    # ── Company Info ──
     company_name = profile.get("name", "Bisnis Anda")
     company_field = profile.get("field", "")
     company_email = profile.get("contact", {}).get("email", "")
@@ -125,7 +120,6 @@ def generate_quote_pdf(
     story.append(header_table)
     story.append(HRFlowable(width="100%", thickness=2, color=primary, spaceAfter=12))
 
-    # ── Customer Info ──
     story.append(Paragraph(
         "<font size='10' color='#6B7280'>Kepada Yth,</font>", styles["Normal"]))
     story.append(Paragraph(
@@ -135,7 +129,6 @@ def generate_quote_pdf(
             f"<font size='10' color='#6B7280'>{customer_phone}</font>", styles["Normal"]))
     story.append(Spacer(1, 0.5*cm))
 
-    # ── Items Table ──
     table_header = [
         Paragraph("<b>No</b>", styles["Normal"]),
         Paragraph("<b>Produk/Layanan</b>", styles["Normal"]),
@@ -166,7 +159,6 @@ def generate_quote_pdf(
             Paragraph(f"Rp {total:,.0f}", styles["Normal"]),
         ])
 
-    # Total row
     table_data.append([
         Paragraph("", styles["Normal"]),
         Paragraph("", styles["Normal"]),
@@ -197,7 +189,6 @@ def generate_quote_pdf(
     story.append(items_table)
     story.append(Spacer(1, 0.5*cm))
 
-    # ── Notes ──
     if notes:
         story.append(HRFlowable(width="100%", thickness=0.5, color=gray, spaceAfter=6))
         story.append(Paragraph(
@@ -206,7 +197,6 @@ def generate_quote_pdf(
             f"<font size='10' color='#6B7280'>{notes}</font>", styles["Normal"]))
         story.append(Spacer(1, 0.3*cm))
 
-    # ── Payment Info ──
     payment = profile.get("payment", {})
     if payment:
         story.append(HRFlowable(width="100%", thickness=0.5, color=gray, spaceAfter=6))
@@ -221,7 +211,6 @@ def generate_quote_pdf(
                 styles["Normal"]))
         story.append(Spacer(1, 0.3*cm))
 
-    # ── How to Order ──
     how_to_order = profile.get("how_to_order", "")
     if how_to_order:
         story.append(Paragraph(
@@ -229,7 +218,6 @@ def generate_quote_pdf(
             styles["Normal"]))
         story.append(Spacer(1, 0.3*cm))
 
-    # ── Footer ──
     story.append(HRFlowable(width="100%", thickness=0.5, color=gray, spaceAfter=6))
     story.append(Paragraph(
         f"<font size='9' color='#6B7280'>"
@@ -248,16 +236,20 @@ async def generate_quote_from_request(
     customer_name: str,
     customer_phone: str,
     request_text: str,
-    user_id: str = "default"
+    user_id: str = "default",
+    customer_email: str = ""
 ) -> dict:
     """
     Generate quotation dari request text menggunakan AI — per user
+    Setelah PDF dibuat → kirim ke email dan WA customer otomatis
     Returns: {"pdf_path": str, "items": list, "quote_number": str}
     """
     from app.services.ai_provider import call_llm
 
     profile = _load_profile(user_id)
     products = profile.get("products", [])
+    company_name = profile.get("name", "Bisnis Anda")
+    company_email = profile.get("contact", {}).get("email", "")
 
     system_prompt = f"""Kamu adalah asisten bisnis yang membuat quotation.
 Bisnis: {profile.get('name', 'Bisnis')}
@@ -309,9 +301,92 @@ Respond HANYA dengan JSON tanpa penjelasan."""
         user_id=user_id
     )
 
+    # Hitung total
+    total = sum(
+        item.get("qty", 1) * item.get("price", 0)
+        for item in quote_data.get("items", [])
+    )
+    total_str = f"Rp {total:,.0f}".replace(",", ".")
+
+    email_sent = False
+    wa_sent = False
+
+    # ✅ Kirim PDF via Email kalau ada email customer
+    if customer_email and "@" in customer_email and os.path.exists(pdf_path):
+        try:
+            from app.services.gmail_service import send_email_with_attachment
+            email_body = f"""Halo {customer_name}! 😊
+
+Terima kasih atas ketertarikan Anda pada layanan {company_name}.
+
+Terlampir quotation yang Anda minta:
+📄 No: {quote_number}
+💰 Total: {total_str}
+📅 Berlaku: 14 hari dari sekarang
+
+Silakan hubungi kami jika ada pertanyaan atau ingin melanjutkan order.
+
+Salam,
+{company_name}
+— Powered by Orion AI"""
+
+            send_email_with_attachment(
+                to=customer_email,
+                subject=f"Quotation {quote_number} — {company_name}",
+                body=email_body,
+                file_path=pdf_path,
+                filename=f"{quote_number}.pdf"
+            )
+            email_sent = True
+            print(f"[QUOTE] Email terkirim ke {customer_email}")
+        except Exception as e:
+            print(f"[QUOTE EMAIL ERROR] {e}")
+
+    # ✅ Kirim notif via WA kalau ada nomor customer
+    if customer_phone and os.path.exists(pdf_path):
+        try:
+            from app.services.whatsapp_service import send_whatsapp_baileys
+
+            # Normalize nomor
+            phone_clean = customer_phone.strip().replace(" ", "").replace("-", "")
+            if phone_clean.startswith("0"):
+                phone_clean = "62" + phone_clean[1:]
+            elif not phone_clean.startswith("62"):
+                phone_clean = "62" + phone_clean
+
+            wa_msg = f"""Halo {customer_name}! 😊
+
+Quotation dari *{company_name}* sudah siap!
+
+📄 *No:* {quote_number}
+💰 *Total:* {total_str}
+📅 *Berlaku:* 14 hari
+
+"""
+            # Tambah detail items
+            for item in quote_data.get("items", [])[:5]:
+                item_total = item.get("qty", 1) * item.get("price", 0)
+                wa_msg += f"• {item.get('name', '')} x{item.get('qty', 1)} = Rp {item_total:,.0f}\n".replace(",", ".")
+
+            if customer_email:
+                wa_msg += f"\n📧 PDF sudah dikirim ke email kamu ya!"
+            else:
+                wa_msg += f"\n📞 Hubungi kami untuk detail lebih lanjut!"
+
+            wa_msg += f"\n\nTerima kasih! 🙏"
+
+            send_whatsapp_baileys(phone_clean, wa_msg)
+            wa_sent = True
+            print(f"[QUOTE] WA terkirim ke {phone_clean}")
+        except Exception as e:
+            print(f"[QUOTE WA ERROR] {e}")
+
     return {
         "pdf_path": pdf_path,
         "items": quote_data.get("items", []),
         "quote_number": quote_number,
-        "notes": quote_data.get("notes", "")
+        "notes": quote_data.get("notes", ""),
+        "total": total,
+        "email_sent": email_sent,
+        "wa_sent": wa_sent
     }
