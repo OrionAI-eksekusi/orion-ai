@@ -313,7 +313,6 @@ async def process_command(message: str, user_id: str = "default"):
             reply += f"📅 Jatuh Tempo: {due_date}\n"
             reply += f"📝 Keterangan: {description}\n\n"
 
-            # ✅ Mode Otomatis: Langsung kirim WA saat invoice dibuat
             if customer_phone:
                 try:
                     from app.services.whatsapp_service import send_invoice_whatsapp
@@ -886,7 +885,8 @@ Jika tidak ada task, kembalikan tasks sebagai array kosong."""
 
 
 async def generate_wa_reply(message: str, business_context: str) -> str:
-    """Generate WA reply — detect quotation request otomatis"""
+    """Generate WA reply — hangat, natural, personal, bisa follow up"""
+
     if is_quote_request(message):
         customer_name = "Customer"
         try:
@@ -894,7 +894,6 @@ async def generate_wa_reply(message: str, business_context: str) -> str:
             customer_name = ctx.get("name", "Customer")
         except:
             pass
-
         try:
             from app.services.quote_service import generate_quote_from_request
             quote = await generate_quote_from_request(
@@ -902,8 +901,37 @@ async def generate_wa_reply(message: str, business_context: str) -> str:
                 customer_phone="",
                 request_text=message
             )
-            return f"Terima kasih atas permintaan Anda! Kami telah menyiapkan penawaran harga untuk Anda. Quotation No: {quote['quote_number']} sedang diproses dan akan segera kami kirimkan. Ada yang ingin ditanyakan lebih lanjut? 😊"
+            return f"Halo {customer_name}! 😊 Makasih udah nanya ya!\n\nKami udah siapkan penawaran spesial buat kamu. Quotation *{quote['quote_number']}* lagi diproses dan akan segera kami kirimkan.\n\nAda yang mau ditanyain lagi? Kami siap bantu! 🙏"
         except Exception as e:
             print(f"[QUOTE ERROR] {e}")
 
-    return await call_llm(business_context, message)
+    system_prompt = f"""Kamu adalah asisten WA bisnis yang ramah, hangat, dan natural — seperti CS profesional tapi terasa seperti teman.
+
+{business_context}
+
+ATURAN PENTING:
+1. Balas dengan HANGAT dan NATURAL — jangan kaku seperti robot
+2. Gunakan bahasa Indonesia yang santai tapi tetap sopan
+3. Kalau tahu nama customer, SELALU sapa dengan namanya
+4. Maksimal 3-4 kalimat — singkat, padat, friendly
+5. Pakai emoji secukupnya biar terasa hangat 😊
+6. Kalau customer komplain → empati dulu, baru solusi
+7. Kalau customer tanya produk → antusias, highlight benefit utama
+8. Kalau customer mau beli → pandu langkah selanjutnya dengan jelas
+9. Kalau customer bilang terima kasih → balas hangat dan tawarkan bantuan lain
+10. JANGAN pernah jawab seperti template korporat yang dingin
+11. Selalu akhiri dengan pertanyaan atau tawaran bantuan supaya customer mau lanjut ngobrol
+
+Contoh balasan BAGUS:
+- "Halo Kak Budi! 😊 Wah makasih udah tertarik ya! Produk ini emang lagi banyak yang minat soalnya kualitasnya bagus banget."
+- "Hai! Tenang aja, kami bantu sampai beres kok. Boleh ceritain lebih detail masalahnya? 🙏"
+- "Kak, untuk yang ini kami ada promo spesial lho! Mau kami info lebih lanjut? 😊"
+
+Contoh balasan BURUK (jangan seperti ini):
+- "Terima kasih atas pesan Anda. Tim kami akan segera menghubungi Anda."
+- "Baik, kami catat pesanan Anda."
+- "Halo, ada yang bisa kami bantu?"
+
+Balas pesan customer berikut dengan hangat dan natural:"""
+
+    return await call_llm(system_prompt, message)
