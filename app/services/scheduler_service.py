@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -89,7 +90,6 @@ async def follow_up_check():
                     else:
                         follow_up = "Halo! Just checking in nih 😊 Kalau ada yang mau ditanyain atau butuh bantuan, kami selalu siap ya! 🙏"
 
-                # ✅ Pakai Baileys bukan Fonnte
                 send_whatsapp_baileys(phone, follow_up)
                 mark_follow_up_sent(phone)
                 logger.info(f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
@@ -102,11 +102,12 @@ async def follow_up_check():
 
 
 async def brain_follow_up_check():
-    """Cek Personal Brain follow up yang jatuh tempo"""
+    """Cek Personal Brain follow up yang jatuh tempo — kirim FCM + WA ke kontak"""
     try:
         logger.info("[BRAIN FOLLOWUP] Cek Personal Brain follow up...")
         from app.services.database_service import get_all_active_users
         from app.services.memory_service import get_pending_follow_ups, mark_brain_follow_up_sent
+        from app.services.whatsapp_service import send_whatsapp_baileys
         from app.routers.chat import send_fcm_notification
 
         users = get_all_active_users()
@@ -115,6 +116,8 @@ async def brain_follow_up_check():
 
         for user in users:
             user_id = user["user_id"]
+            user_name = user.get("name", "")
+
             try:
                 pending = get_pending_follow_ups(user_id)
                 if not pending:
@@ -125,9 +128,10 @@ async def brain_follow_up_check():
                     notes = item["notes"]
                     follow_up_count = item.get("follow_up_count", 0)
 
+                    # ✅ Kirim FCM notif ke owner
                     await send_fcm_notification(
                         title=f"⏰ Follow Up: {name}",
-                        body=f"Jadwal follow up hari ini! {notes[:60]}",
+                        body=f"Waktunya follow up {name}! {notes[:60]}",
                         data={
                             "type": "brain_followup",
                             "entity_name": name,
@@ -136,8 +140,36 @@ async def brain_follow_up_check():
                         user_id=user_id
                     )
 
+                    # ✅ Cari nomor WA dari notes menggunakan regex
+                    phone_match = re.search(
+                        r'(?:wa|whatsapp|hp|telp|phone|nomor)?[:\s]*(\+?62\d{8,13}|08\d{8,13})',
+                        notes, re.IGNORECASE
+                    )
+
+                    if phone_match:
+                        phone = phone_match.group(1).strip()
+                        phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+                        if phone.startswith("0"):
+                            phone = "62" + phone[1:]
+                        elif not phone.startswith("62"):
+                            phone = "62" + phone
+
+                        # ✅ Kirim WA follow up ke kontak
+                        if follow_up_count == 0:
+                            wa_msg = f"Halo {name}! 😊\n\nSaya {user_name} mau follow up nih. Gimana kabarnya? Ada yang bisa saya bantu atau diskusikan? 🙏"
+                        else:
+                            wa_msg = f"Halo {name},\n\nSaya {user_name} kembali follow up ya. Semoga semuanya baik-baik saja! Ada update yang bisa kita diskusikan? 😊"
+
+                        try:
+                            send_whatsapp_baileys(phone, wa_msg)
+                            logger.info(f"[BRAIN FOLLOWUP] WA terkirim ke {name} ({phone})")
+                        except Exception as wa_err:
+                            logger.error(f"[BRAIN FOLLOWUP WA ERROR] {name}: {wa_err}")
+                    else:
+                        logger.info(f"[BRAIN FOLLOWUP] {name} tidak punya nomor WA di notes, skip kirim WA")
+
                     mark_brain_follow_up_sent(user_id, name)
-                    logger.info(f"[BRAIN FOLLOWUP] Notif terkirim: {name} (user: {user_id})")
+                    logger.info(f"[BRAIN FOLLOWUP] Follow up selesai: {name} (user: {user_id})")
 
             except Exception as e:
                 logger.error(f"[BRAIN FOLLOWUP ERROR] user {user_id}: {e}")
@@ -155,7 +187,6 @@ async def payment_reminder_check():
             format_amount, init_payment_db
         )
         from app.services.database_service import get_all_active_users
-        # ✅ FIX: Pakai Baileys bukan Fonnte untuk reminder otomatis
         from app.services.whatsapp_service import send_whatsapp_baileys
         from app.routers.chat import send_fcm_notification
 
@@ -183,7 +214,6 @@ async def payment_reminder_check():
                     due_date = inv.get("due_date", "")
                     reminder_count = inv.get("reminder_count", 0)
 
-                    # ✅ Pesan hangat dan natural per reminder
                     if reminder_count == 0:
                         wa_msg = (
                             f"Halo {name}! 😊\n\n"
@@ -215,7 +245,6 @@ async def payment_reminder_check():
                             f"hubungi kami langsung. Terima kasih! 🙏"
                         )
 
-                    # ✅ Kirim via Baileys kalau ada nomor
                     if phone:
                         try:
                             send_whatsapp_baileys(phone, wa_msg)
@@ -223,10 +252,8 @@ async def payment_reminder_check():
                         except Exception as e:
                             logger.error(f"[PAYMENT WA ERROR] {e}")
 
-                    # Increment reminder count
                     increment_reminder_count(inv_number, user_id)
 
-                    # Notif ke owner via FCM
                     await send_fcm_notification(
                         title=f"💰 Reminder Invoice: {name}",
                         body=f"{inv_number} — {amount} — Reminder ke-{reminder_count+1}",
@@ -670,7 +697,6 @@ async def _generate_report_pdf(
 
 def start_scheduler():
     try:
-        # Job 1: Proactive email check tiap 30 menit
         scheduler.add_job(
             proactive_check,
             trigger=IntervalTrigger(minutes=30),
@@ -678,7 +704,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 2: Follow up WA tiap 1 jam — max 2x
         scheduler.add_job(
             follow_up_check,
             trigger=IntervalTrigger(hours=1),
@@ -686,7 +711,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: Laporan mingguan Senin jam 07.00 WIB (UTC=00.00)
         scheduler.add_job(
             generate_weekly_report,
             trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
@@ -694,7 +718,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 4: Daily Intelligence Briefing jam 06.00 WIB (UTC=23.00)
         scheduler.add_job(
             daily_intelligence_briefing,
             trigger=CronTrigger(hour=23, minute=0),
@@ -702,7 +725,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 5: Personal Brain follow up jam 08.00 WIB (UTC=01.00)
         scheduler.add_job(
             brain_follow_up_check,
             trigger=CronTrigger(hour=1, minute=0),
@@ -710,7 +732,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 6: Payment reminder jam 09.00 WIB (UTC=02.00)
         scheduler.add_job(
             payment_reminder_check,
             trigger=CronTrigger(hour=2, minute=0),
@@ -725,7 +746,7 @@ def start_scheduler():
             "  - Follow up WA: 1 jam (max 2x) via Baileys\n"
             "  - Report: Senin 07.00 WIB\n"
             "  - Briefing: 06.00 pagi\n"
-            "  - Brain Follow Up: 08.00 pagi\n"
+            "  - Brain Follow Up: 08.00 pagi + WA otomatis ke kontak\n"
             "  - Payment Reminder: 09.00 pagi via Baileys"
         )
 
