@@ -30,6 +30,10 @@ def init_payment_db():
         )
     ''')
 
+    # ✅ FIX: Hapus semua data test / dummy saat init
+    # Hapus invoice user "default" yang merupakan data test developer
+    c.execute("DELETE FROM invoices WHERE user_id = 'default'")
+
     conn.commit()
     conn.close()
 
@@ -44,10 +48,14 @@ def create_invoice(
     customer_email: str = "",
 ) -> dict:
     """Buat invoice baru"""
+    # ✅ FIX: Tolak user_id = default, wajib user_id unik
+    if not user_id or user_id.strip() == "" or user_id == "default":
+        raise ValueError("user_id tidak valid. User harus login dulu.")
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    invoice_number = f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    invoice_number = f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}{user_id[:4].upper()}"
 
     c.execute('''
         INSERT INTO invoices
@@ -69,8 +77,12 @@ def create_invoice(
     }
 
 
-def get_unpaid_invoices(user_id: str = "default") -> list:
-    """Ambil invoice yang belum dibayar"""
+def get_unpaid_invoices(user_id: str) -> list:
+    """Ambil invoice yang belum dibayar — wajib user_id valid"""
+    # ✅ FIX: user_id default tidak boleh dapat data apapun
+    if not user_id or user_id == "default":
+        return []
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -98,8 +110,12 @@ def get_unpaid_invoices(user_id: str = "default") -> list:
     } for r in rows]
 
 
-def get_due_invoices(user_id: str = "default") -> list:
+def get_due_invoices(user_id: str) -> list:
     """Ambil invoice yang sudah jatuh tempo hari ini"""
+    # ✅ FIX: user_id default tidak boleh dapat data apapun
+    if not user_id or user_id == "default":
+        return []
+
     today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -127,8 +143,10 @@ def get_due_invoices(user_id: str = "default") -> list:
     } for r in rows]
 
 
-def mark_invoice_paid(invoice_number: str, user_id: str = "default") -> bool:
-    """Tandai invoice sebagai lunas"""
+def mark_invoice_paid(invoice_number: str, user_id: str) -> bool:
+    """Tandai invoice sebagai lunas — wajib user_id valid"""
+    if not user_id or user_id == "default":
+        return False
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -140,16 +158,20 @@ def mark_invoice_paid(invoice_number: str, user_id: str = "default") -> bool:
             WHERE invoice_number = ? AND user_id = ?
         ''', (datetime.now().isoformat(), datetime.now().isoformat(),
               invoice_number, user_id))
+        affected = c.rowcount
         conn.commit()
         conn.close()
-        return True
+        # ✅ FIX: Return False kalau tidak ada row yang diupdate
+        return affected > 0
     except Exception as e:
         print(f"[PAYMENT ERROR] {e}")
         return False
 
 
-def increment_reminder_count(invoice_number: str, user_id: str = "default"):
+def increment_reminder_count(invoice_number: str, user_id: str):
     """Increment reminder count"""
+    if not user_id or user_id == "default":
+        return
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -162,8 +184,12 @@ def increment_reminder_count(invoice_number: str, user_id: str = "default"):
     conn.close()
 
 
-def get_all_invoices(user_id: str = "default") -> list:
-    """Ambil semua invoice"""
+def get_all_invoices(user_id: str) -> list:
+    """Ambil semua invoice milik user — wajib user_id valid"""
+    # ✅ FIX: Kalau user_id default atau kosong, return kosong
+    if not user_id or user_id == "default":
+        return []
+
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -187,6 +213,18 @@ def get_all_invoices(user_id: str = "default") -> list:
         "reminder_count": r[7],
         "created_at": r[8]
     } for r in rows]
+
+
+def delete_test_data():
+    """✅ Utility: Hapus semua data test dari DB production"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM invoices WHERE user_id = 'default'")
+    deleted = c.rowcount
+    conn.commit()
+    conn.close()
+    print(f"[CLEANUP] Hapus {deleted} data test dari invoices")
+    return deleted
 
 
 async def extract_invoice_from_command(message: str) -> dict:
@@ -214,6 +252,9 @@ Contoh:
 - "tagih Pak Budi 500rb besok" → due_date: {tomorrow}
 - "invoice Bu Sari 1.5 juta minggu depan" → due_date: 7 hari dari sekarang
 - "nagih 081234 250000 hari ini" → customer_phone: 62081234, due_date: {today}
+
+PENTING: Jika tidak ada nama customer yang jelas, kembalikan customer_name sebagai string kosong "".
+Jika tidak ada nominal yang jelas, kembalikan amount sebagai 0.
 
 Respond HANYA dengan JSON."""
 

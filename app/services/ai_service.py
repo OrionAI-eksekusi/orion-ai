@@ -144,21 +144,40 @@ async def process_command(message: str, user_id: str = "default"):
             )
             init_payment_db()
 
+            # ✅ FIX: Tolak user_id default — user harus login dulu
+            if not user_id or user_id == "default":
+                reply = "⚠️ Kamu belum login. Silakan setup profil dulu di onboarding."
+                return {
+                    "status": "error",
+                    "message": message,
+                    "response": reply,
+                    "emails": [],
+                    "parsed": {
+                        "intent": "payment",
+                        "summary": reply,
+                        "action": "error_no_user",
+                        "needs_confirmation": False,
+                        "draft": "",
+                        "reply": reply,
+                        "reply_to": "",
+                        "subject": ""
+                    }
+                }
+
             msg_lower = message.lower()
 
             # Cek apakah konfirmasi lunas
             if any(kw in msg_lower for kw in ['lunas', 'sudah bayar', 'konfirmasi bayar', 'bukti transfer']):
-                reply = "✅ Terima kasih! Untuk konfirmasi pembayaran, sebutkan nomor invoice nya bro!\n\nContoh: 'INV-20260509123456 sudah lunas'"
+                reply = "✅ Untuk konfirmasi pembayaran, sebutkan nomor invoice nya!\n\nContoh: 'INV-20260509123456 sudah lunas'"
 
-                # Cek ada nomor invoice di pesan
-                inv_match = re.search(r'INV-\d+', message.upper())
+                inv_match = re.search(r'INV-[\w\d]+', message.upper())
                 if inv_match:
                     inv_number = inv_match.group(0)
                     success = mark_invoice_paid(inv_number, user_id)
                     if success:
                         reply = f"✅ Invoice **{inv_number}** sudah ditandai LUNAS!\nReminder otomatis dihentikan."
                     else:
-                        reply = f"❌ Invoice **{inv_number}** tidak ditemukan."
+                        reply = f"❌ Invoice **{inv_number}** tidak ditemukan di akun kamu."
 
                 return {
                     "status": "success",
@@ -178,10 +197,12 @@ async def process_command(message: str, user_id: str = "default"):
                 }
 
             # Cek daftar invoice
-            if any(kw in msg_lower for kw in ['daftar invoice', 'list tagihan', 'semua tagihan', 'tagihan saya']):
+            if any(kw in msg_lower for kw in ['daftar invoice', 'list tagihan', 'semua tagihan', 'tagihan saya', 'daftar tagihan']):
                 invoices = get_all_invoices(user_id)
+
+                # ✅ FIX: Kalau kosong, pesan jelas tidak ngarang data
                 if not invoices:
-                    reply = "📭 Belum ada invoice. Buat dulu dengan: 'tagih [nama] [nominal] [jatuh tempo]'"
+                    reply = "📭 Kamu belum punya invoice apapun.\n\nBuat tagihan dengan perintah:\n'tagih [nama customer] [nominal] [jatuh tempo]'\n\nContoh: 'tagih Pak Andi 1 juta minggu depan'"
                 else:
                     unpaid = [i for i in invoices if i['status'] == 'unpaid']
                     paid = [i for i in invoices if i['status'] == 'paid']
@@ -214,15 +235,16 @@ async def process_command(message: str, user_id: str = "default"):
 
             # Buat invoice baru
             invoice_info = await extract_invoice_from_command(message)
-            customer_name = invoice_info.get("customer_name", "")
-            customer_phone = invoice_info.get("customer_phone", "")
-            customer_email = invoice_info.get("customer_email", "")
+            customer_name = invoice_info.get("customer_name", "").strip()
+            customer_phone = invoice_info.get("customer_phone", "").strip()
+            customer_email = invoice_info.get("customer_email", "").strip()
             amount = invoice_info.get("amount", 0)
             description = invoice_info.get("description", "Tagihan")
             due_date = invoice_info.get("due_date", "")
 
+            # ✅ FIX: Validasi ketat sebelum buat invoice
             if not customer_name or amount <= 0:
-                reply = "Siap! 💰 Sebutkan detail tagihannya bro!\n\nContoh:\n'tagih Pak Budi 500rb besok'\n'invoice Bu Sari 1.5 juta minggu depan 081234567'"
+                reply = "💰 Sebutkan detail tagihannya!\n\nContoh:\n• 'tagih Pak Budi 500rb besok'\n• 'invoice Bu Sari 1.5 juta minggu depan 081234567'"
                 return {
                     "status": "success",
                     "message": message,
@@ -240,7 +262,6 @@ async def process_command(message: str, user_id: str = "default"):
                     }
                 }
 
-            # Buat invoice
             invoice = create_invoice(
                 user_id=user_id,
                 customer_name=customer_name,
@@ -257,7 +278,6 @@ async def process_command(message: str, user_id: str = "default"):
             reply += f"💰 Nominal: {format_amount(amount)}\n"
             reply += f"📅 Jatuh Tempo: {due_date}\n"
             reply += f"📝 Keterangan: {description}\n\n"
-
             if customer_phone:
                 reply += f"📱 Orion akan auto WA reminder ke {customer_phone} saat jatuh tempo!\n"
                 reply += f"⚡ Maksimal 3x reminder, lalu berhenti otomatis."
@@ -282,6 +302,24 @@ async def process_command(message: str, user_id: str = "default"):
                 }
             }
 
+        except ValueError as ve:
+            reply = str(ve)
+            return {
+                "status": "error",
+                "message": message,
+                "response": reply,
+                "emails": [],
+                "parsed": {
+                    "intent": "payment",
+                    "summary": reply,
+                    "action": "error_validation",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
         except Exception as e:
             print(f"[PAYMENT ERROR] {e}")
             reply = f"❌ Gagal proses payment: {str(e)}"
