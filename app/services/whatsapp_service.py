@@ -1,6 +1,7 @@
 import os
 import requests
 import time
+import base64
 from dotenv import load_dotenv
 from app.services.database_service import save_wa_message
 
@@ -20,11 +21,7 @@ def send_whatsapp(phone: str, message: str):
 
 
 def send_whatsapp_baileys(phone: str, message: str) -> dict:
-    """
-    Kirim WA via Baileys (worker Railway) — untuk tagihan & reminder.
-    Pakai koneksi WA yang sudah di-scan user di Orion.
-    Tidak perlu Fonnte sama sekali.
-    """
+    """Kirim WA teks via Baileys"""
     try:
         phone_clean = phone.strip().replace(" ", "").replace("-", "")
         if phone_clean.startswith("0"):
@@ -41,6 +38,35 @@ def send_whatsapp_baileys(phone: str, message: str) -> dict:
         return result
     except Exception as e:
         print(f"[BAILEYS SEND ERROR] {e}")
+        return {"status": False, "error": str(e)}
+
+
+def send_file_whatsapp_baileys(phone: str, file_path: str, filename: str, caption: str = "") -> dict:
+    """Kirim file PDF via Baileys"""
+    try:
+        phone_clean = phone.strip().replace(" ", "").replace("-", "")
+        if phone_clean.startswith("0"):
+            phone_clean = "62" + phone_clean[1:]
+        elif not phone_clean.startswith("62"):
+            phone_clean = "62" + phone_clean
+
+        # Baca file dan convert ke base64
+        with open(file_path, "rb") as f:
+            file_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+        response = requests.post(
+            f"{WA_GATEWAY_URL}/send-file",
+            json={
+                "phone": phone_clean,
+                "file_base64": file_base64,
+                "filename": filename,
+                "caption": caption
+            },
+            timeout=30
+        )
+        return response.json()
+    except Exception as e:
+        print(f"[BAILEYS SEND FILE ERROR] {e}")
         return {"status": False, "error": str(e)}
 
 
