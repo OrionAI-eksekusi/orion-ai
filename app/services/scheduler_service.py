@@ -58,7 +58,7 @@ async def follow_up_check():
     try:
         logger.info("[FOLLOWUP] Mengecek pesan yang belum dibalas...")
         from app.services.database_service import get_unreplied_messages, mark_follow_up_sent
-        from app.services.whatsapp_service import send_whatsapp
+        from app.services.whatsapp_service import send_whatsapp_baileys
         from app.services.memory_service import get_customer_memory
 
         unreplied = get_unreplied_messages(hours=24)
@@ -80,16 +80,17 @@ async def follow_up_check():
 
                 if follow_up_count == 0:
                     if name:
-                        follow_up = f"Halo {name}! 😊 Ada yang bisa kami bantu? Kami siap melayani kamu."
+                        follow_up = f"Halo {name}! 😊 Kami mau mastiin aja nih, ada yang bisa kami bantu lebih lanjut? Kami siap melayani kamu kapanpun! 🙏"
                     else:
-                        follow_up = "Halo! 😊 Ada yang bisa kami bantu? Kami siap melayani Anda."
+                        follow_up = "Halo! 😊 Kami mau mastiin aja nih, ada yang bisa kami bantu lebih lanjut? Kami siap melayani kapanpun! 🙏"
                 else:
                     if name:
-                        follow_up = f"Halo {name}, kami ingin memastikan apakah ada yang bisa kami bantu? 🙏"
+                        follow_up = f"Halo {name}, just checking in nih 😊 Kalau ada yang mau ditanyain atau butuh bantuan, kami selalu siap ya! 🙏"
                     else:
-                        follow_up = "Halo, apakah ada yang bisa kami bantu? 🙏"
+                        follow_up = "Halo! Just checking in nih 😊 Kalau ada yang mau ditanyain atau butuh bantuan, kami selalu siap ya! 🙏"
 
-                send_whatsapp(phone, follow_up)
+                # ✅ Pakai Baileys bukan Fonnte
+                send_whatsapp_baileys(phone, follow_up)
                 mark_follow_up_sent(phone)
                 logger.info(f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
 
@@ -154,7 +155,8 @@ async def payment_reminder_check():
             format_amount, init_payment_db
         )
         from app.services.database_service import get_all_active_users
-        from app.services.whatsapp_service import send_whatsapp
+        # ✅ FIX: Pakai Baileys bukan Fonnte untuk reminder otomatis
+        from app.services.whatsapp_service import send_whatsapp_baileys
         from app.routers.chat import send_fcm_notification
 
         init_payment_db()
@@ -164,6 +166,9 @@ async def payment_reminder_check():
 
         for user in users:
             user_id = user["user_id"]
+            if not user_id or user_id == "default":
+                continue
+
             try:
                 due_invoices = get_due_invoices(user_id)
                 if not due_invoices:
@@ -178,38 +183,42 @@ async def payment_reminder_check():
                     due_date = inv.get("due_date", "")
                     reminder_count = inv.get("reminder_count", 0)
 
-                    # Pilih pesan berdasarkan reminder ke berapa
+                    # ✅ Pesan hangat dan natural per reminder
                     if reminder_count == 0:
                         wa_msg = (
                             f"Halo {name}! 😊\n\n"
-                            f"Mengingatkan bahwa invoice Anda:\n"
-                            f"📄 No: {inv_number}\n"
-                            f"💰 Nominal: {amount}\n"
-                            f"📅 Jatuh Tempo: {due_date}\n\n"
+                            f"Kami mau mengingatkan tagihan berikut ya:\n\n"
+                            f"📄 *Invoice:* {inv_number}\n"
+                            f"💰 *Nominal:* {amount}\n"
+                            f"📅 *Jatuh Tempo:* {due_date}\n\n"
                             f"Mohon segera dilakukan pembayaran ya. "
-                            f"Terima kasih! 🙏"
+                            f"Kalau ada kendala jangan sungkan hubungi kami! 🙏"
                         )
                     elif reminder_count == 1:
                         wa_msg = (
-                            f"Halo {name}, 😊\n\n"
-                            f"Reminder ke-2 untuk invoice {inv_number} "
-                            f"sebesar {amount} yang jatuh tempo {due_date}.\n\n"
+                            f"Halo {name} 😊\n\n"
+                            f"Kami mau follow up tagihan:\n\n"
+                            f"📄 *Invoice:* {inv_number}\n"
+                            f"💰 *Nominal:* {amount}\n"
+                            f"📅 *Jatuh Tempo:* {due_date}\n\n"
                             f"Apakah ada kendala pembayaran? "
-                            f"Hubungi kami jika butuh bantuan. 🙏"
+                            f"Kami siap bantu carikan solusinya! 🙏"
                         )
                     else:
                         wa_msg = (
                             f"Halo {name},\n\n"
-                            f"Ini adalah reminder terakhir untuk invoice "
-                            f"{inv_number} sebesar {amount}.\n\n"
-                            f"Mohon segera konfirmasi pembayaran. "
-                            f"Terima kasih. 🙏"
+                            f"Ini reminder terakhir untuk:\n\n"
+                            f"📄 *Invoice:* {inv_number}\n"
+                            f"💰 *Nominal:* {amount}\n"
+                            f"📅 *Jatuh Tempo:* {due_date}\n\n"
+                            f"Mohon segera konfirmasi pembayaran atau "
+                            f"hubungi kami langsung. Terima kasih! 🙏"
                         )
 
-                    # Kirim WA kalau ada nomor
+                    # ✅ Kirim via Baileys kalau ada nomor
                     if phone:
                         try:
-                            send_whatsapp(phone, wa_msg)
+                            send_whatsapp_baileys(phone, wa_msg)
                             logger.info(f"[PAYMENT] WA reminder terkirim ke {name} ({phone})")
                         except Exception as e:
                             logger.error(f"[PAYMENT WA ERROR] {e}")
@@ -217,7 +226,7 @@ async def payment_reminder_check():
                     # Increment reminder count
                     increment_reminder_count(inv_number, user_id)
 
-                    # Notif ke owner
+                    # Notif ke owner via FCM
                     await send_fcm_notification(
                         title=f"💰 Reminder Invoice: {name}",
                         body=f"{inv_number} — {amount} — Reminder ke-{reminder_count+1}",
@@ -335,7 +344,6 @@ async def daily_intelligence_briefing():
             user_phone = user.get("phone") or os.getenv("USER_PHONE", "")
             city = user.get("city") or user_city
 
-            # Cek personal brain follow up
             brain_reminder = ""
             try:
                 from app.services.memory_service import get_pending_follow_ups
@@ -346,7 +354,6 @@ async def daily_intelligence_briefing():
             except Exception:
                 pass
 
-            # Cek invoice jatuh tempo
             invoice_reminder = ""
             try:
                 from app.services.payment_service import get_due_invoices, format_amount, init_payment_db
@@ -393,9 +400,9 @@ Semangat hari ini! 💪🔥
             )
 
             try:
-                from app.services.whatsapp_service import send_whatsapp
+                from app.services.whatsapp_service import send_whatsapp_baileys
                 if user_phone:
-                    send_whatsapp(user_phone, briefing_text)
+                    send_whatsapp_baileys(user_phone, briefing_text)
                     logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
             except Exception as e:
                 logger.error(f"[BRIEFING WA] {e}")
@@ -679,7 +686,7 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        # Job 3: Laporan mingguan Senin jam 07.00 WIB
+        # Job 3: Laporan mingguan Senin jam 07.00 WIB (UTC=00.00)
         scheduler.add_job(
             generate_weekly_report,
             trigger=CronTrigger(day_of_week="mon", hour=0, minute=0),
@@ -715,11 +722,11 @@ def start_scheduler():
         logger.info(
             "[SCHEDULER] Semua job dimulai:\n"
             "  - Proactive: 30 menit\n"
-            "  - Follow up WA: 1 jam (max 2x)\n"
+            "  - Follow up WA: 1 jam (max 2x) via Baileys\n"
             "  - Report: Senin 07.00 WIB\n"
             "  - Briefing: 06.00 pagi\n"
             "  - Brain Follow Up: 08.00 pagi\n"
-            "  - Payment Reminder: 09.00 pagi"
+            "  - Payment Reminder: 09.00 pagi via Baileys"
         )
 
     except Exception as e:
