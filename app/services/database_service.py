@@ -1,6 +1,7 @@
 import sqlite3
 import os
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
 DB_PATH = os.getenv("DB_PATH", "orion.db")
 
@@ -40,6 +41,12 @@ def init_db():
             briefing_hour INTEGER DEFAULT 6,
             timezone TEXT DEFAULT 'Asia/Jakarta',
             is_active INTEGER DEFAULT 1,
+            plan TEXT DEFAULT 'trial',
+            trial_start TEXT DEFAULT '',
+            trial_end TEXT DEFAULT '',
+            daily_commands INTEGER DEFAULT 0,
+            daily_reset_date TEXT DEFAULT '',
+            total_commands INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now')),
             updated_at TEXT DEFAULT (datetime('now'))
         )
@@ -89,7 +96,7 @@ def init_db():
         )
     ''')
 
-    # Migration
+    # ── Migrations WA Messages ──
     migrations = [
         "ALTER TABLE wa_messages ADD COLUMN follow_up_sent INTEGER DEFAULT 0",
         "ALTER TABLE wa_messages ADD COLUMN follow_up_count INTEGER DEFAULT 0",
@@ -97,6 +104,21 @@ def init_db():
         "ALTER TABLE wa_messages ADD COLUMN user_id TEXT DEFAULT 'default'",
     ]
     for m in migrations:
+        try:
+            c.execute(m)
+        except:
+            pass
+
+    # ── Migrations User Profiles (plan system) ──
+    plan_migrations = [
+        "ALTER TABLE user_profiles ADD COLUMN plan TEXT DEFAULT 'trial'",
+        "ALTER TABLE user_profiles ADD COLUMN trial_start TEXT DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN trial_end TEXT DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN daily_commands INTEGER DEFAULT 0",
+        "ALTER TABLE user_profiles ADD COLUMN daily_reset_date TEXT DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN total_commands INTEGER DEFAULT 0",
+    ]
+    for m in plan_migrations:
         try:
             c.execute(m)
         except:
@@ -112,6 +134,7 @@ def init_db():
 
 
 # ── User Profile Functions ─────────────────────────────
+
 def save_user_profile(user_id: str, name: str, email: str, phone: str,
                        city: str = "Jakarta", briefing_hour: int = 6):
     conn = sqlite3.connect(DB_PATH)
@@ -129,13 +152,16 @@ def save_user_profile(user_id: str, name: str, email: str, phone: str,
     ''', (user_id, name, email, phone, city, briefing_hour, datetime.now().isoformat()))
     conn.commit()
     conn.close()
+    # Init trial setelah save profile
+    init_user_plan(user_id)
 
 
 def get_user_profile(user_id: str) -> dict:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token
+        SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token,
+               plan, trial_start, trial_end, daily_commands, total_commands
         FROM user_profiles WHERE user_id = ?
     ''', (user_id,))
     row = c.fetchone()
@@ -145,7 +171,9 @@ def get_user_profile(user_id: str) -> dict:
     return {
         "user_id": row[0], "name": row[1], "email": row[2],
         "phone": row[3], "city": row[4], "briefing_hour": row[5],
-        "fcm_token": row[6], "gmail_token": row[7]
+        "fcm_token": row[6], "gmail_token": row[7],
+        "plan": row[8], "trial_start": row[9], "trial_end": row[10],
+        "daily_commands": row[11], "total_commands": row[12]
     }
 
 
@@ -187,7 +215,180 @@ def update_user_gmail_token(user_id: str, gmail_token: str):
     conn.close()
 
 
+# ── Plan & Trial Functions ─────────────────────────────
+
+def init_user_plan(user_id: str):
+    """Set trial 3 hari saat user pertama kali daftar"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Cek apakah sudah punya trial
+    c.execute("SELECT trial_start FROM user_profiles WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+
+    if row and row[0]:
+        conn.close()
+        return  # Sudah punya trial, skip
+
+    now = datetime.now()
+    trial_end = now + timedelta(days=3)
+
+    c.execute('''
+        UPDATE user_profiles SET
+            plan = 'trial',
+            trial_start = ?,
+            trial_end = ?,
+            updated_at = ?
+        WHERE user_id = ?
+    ''', (now.isoformat(), trial_end.isoformat(), now.isoformat(), user_id))
+    conn.commit()
+    conn.close()
+    print(f"[PLAN] Trial 3 hari dimulai untuk {user_id} — berakhir {trial_end.strftime('%d %b %Y')}")
+
+
+def get_user_plan(user_id: str) -> dict:
+    """Ambil info plan user — trial/free/apex/zenith"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT plan, trial_start, trial_end, daily_commands, daily_reset_date, total_commands
+        FROM user_profiles WHERE user_id = ?
+    ''', (user_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return {
+            "plan": "free", "is_trial": False, "trial_days_left": 0,
+            "daily_commands": 0, "daily_limit": 10, "can_use": True,
+            "total_commands": 0
+        }
+
+    plan = row[0] or 'trial'
+    trial_start = row[1] or ''
+    trial_end = row[2] or ''
+    daily_commands = row[3] or 0
+    daily_reset_date = row[4] or ''
+    total_commands = row[5] or 0
+
+    now = datetime.now()
+    is_trial = False
+    trial_days_left = 0
+
+    # Cek apakah masih dalam trial
+    if trial_end:
+        try:
+            trial_end_dt = datetime.fromisoformat(trial_end)
+            if now <= trial_end_dt:
+                is_trial = True
+                trial_days_left = (trial_end_dt - now).days + 1
+                plan = 'trial'
+            else:
+                # Trial habis → turun ke free kalau belum upgrade
+                if plan == 'trial':
+                    plan = 'free'
+                    _set_plan(user_id, 'free')
+        except:
+            pass
+
+    # Reset daily commands tiap tengah malam
+    today = now.strftime("%Y-%m-%d")
+    if daily_reset_date != today:
+        _reset_daily_commands(user_id, today)
+        daily_commands = 0
+
+    # Limit berdasarkan plan
+    limits = {
+        'trial':  999999,
+        'apex':   999999,
+        'zenith': 999999,
+        'free':   10,
+    }
+    daily_limit = limits.get(plan, 10)
+    can_use = plan in ['trial', 'apex', 'zenith'] or daily_commands < daily_limit
+
+    return {
+        "plan": plan,
+        "is_trial": is_trial,
+        "trial_days_left": trial_days_left,
+        "trial_end": trial_end,
+        "daily_commands": daily_commands,
+        "daily_limit": daily_limit,
+        "can_use": can_use,
+        "total_commands": total_commands,
+    }
+
+
+def _set_plan(user_id: str, plan: str):
+    """Internal: update plan di DB"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute(
+            "UPDATE user_profiles SET plan = ?, updated_at = ? WHERE user_id = ?",
+            (plan, datetime.now().isoformat(), user_id)
+        )
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+
+def _reset_daily_commands(user_id: str, today: str):
+    """Reset counter harian tiap tengah malam"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            UPDATE user_profiles SET
+                daily_commands = 0,
+                daily_reset_date = ?,
+                updated_at = ?
+            WHERE user_id = ?
+        ''', (today, datetime.now().isoformat(), user_id))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+
+def increment_daily_commands(user_id: str):
+    """Tambah counter perintah harian + total"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        today = datetime.now().strftime("%Y-%m-%d")
+        c.execute('''
+            UPDATE user_profiles SET
+                daily_commands = daily_commands + 1,
+                total_commands = total_commands + 1,
+                daily_reset_date = ?,
+                updated_at = ?
+            WHERE user_id = ?
+        ''', (today, datetime.now().isoformat(), user_id))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+
+def upgrade_user_plan(user_id: str, plan: str):
+    """Upgrade plan user ke apex/zenith"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        UPDATE user_profiles SET
+            plan = ?,
+            updated_at = ?
+        WHERE user_id = ?
+    ''', (plan, datetime.now().isoformat(), user_id))
+    conn.commit()
+    conn.close()
+    print(f"[PLAN] {user_id} upgraded ke {plan.upper()}")
+
+
 # ── WA Message Functions ───────────────────────────────
+
 def save_wa_message(phone: str, message: str, user_id: str = 'default'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -246,8 +447,8 @@ def mark_follow_up_sent(phone: str, user_id: str = 'default'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        UPDATE wa_messages 
-        SET follow_up_sent=1, 
+        UPDATE wa_messages
+        SET follow_up_sent=1,
             follow_up_count=follow_up_count+1
         WHERE phone=? AND user_id=? AND replied=0
     ''', (phone, user_id))
@@ -272,6 +473,7 @@ def get_follow_up_count(phone: str, user_id: str = 'default') -> int:
 
 
 # ── Personal Brain Functions ───────────────────────────
+
 def save_brain_entry(user_id: str, entity_name: str, notes: str,
                       entity_type: str = 'contact', details: dict = {},
                       follow_up_date: str = ''):
@@ -279,14 +481,13 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        INSERT INTO personal_brain 
+        INSERT INTO personal_brain
             (user_id, entity_name, entity_type, notes, details, follow_up_date, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT DO NOTHING
     ''', (user_id, entity_name, entity_type, notes,
           json_dumps(details), follow_up_date, datetime.now().isoformat()))
 
-    # Kalau sudah ada → update
     c.execute('''
         UPDATE personal_brain SET
             notes = notes || char(10) || ?,
@@ -306,7 +507,7 @@ def get_brain_entry(user_id: str, entity_name: str) -> dict:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        SELECT entity_name, entity_type, notes, details, 
+        SELECT entity_name, entity_type, notes, details,
                follow_up_date, follow_up_count, last_contact, created_at
         FROM personal_brain
         WHERE user_id = ? AND entity_name LIKE ?
@@ -329,7 +530,7 @@ def get_all_brain_entries(user_id: str) -> list:
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        SELECT entity_name, entity_type, notes, follow_up_date, 
+        SELECT entity_name, entity_type, notes, follow_up_date,
                follow_up_done, last_contact, updated_at
         FROM personal_brain
         WHERE user_id = ?
@@ -384,15 +585,44 @@ def mark_brain_follow_up_done(user_id: str, entity_name: str):
     conn.close()
 
 
+def mark_brain_follow_up_sent(user_id: str, entity_name: str):
+    """Alias untuk mark_brain_follow_up_done"""
+    mark_brain_follow_up_done(user_id, entity_name)
+
+
+def search_brain(user_id: str, query: str) -> list:
+    """Cari di Personal Brain"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        SELECT entity_name, entity_type, notes, follow_up_date,
+               follow_up_done, last_contact
+        FROM personal_brain
+        WHERE user_id = ? AND (
+            entity_name LIKE ? OR
+            notes LIKE ? OR
+            entity_type LIKE ?
+        )
+        ORDER BY updated_at DESC LIMIT 10
+    ''', (user_id, f'%{query}%', f'%{query}%', f'%{query}%'))
+    rows = c.fetchall()
+    conn.close()
+    return [{
+        "name": r[0], "type": r[1], "notes": r[2],
+        "follow_up_date": r[3], "follow_up_done": bool(r[4]),
+        "last_contact": r[5]
+    } for r in rows]
+
+
 def json_dumps(data: dict) -> str:
     try:
-        import json
         return json.dumps(data, ensure_ascii=False)
     except:
         return '{}'
 
 
 # ── FCM Token Functions ────────────────────────────────
+
 def save_fcm_token_db(token: str, user_id: str = 'default'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
