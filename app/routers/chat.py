@@ -6,7 +6,8 @@ from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_messag
 from app.services.database_service import (
     init_db, get_wa_messages, mark_replied,
     save_user_profile, get_user_profile, get_all_active_users,
-    save_fcm_token_db, get_fcm_token_db, update_user_fcm_token
+    save_fcm_token_db, get_fcm_token_db, update_user_fcm_token,
+    get_user_plan, init_user_plan, increment_daily_commands, upgrade_user_plan
 )
 from app.services.calendar_service import get_upcoming_events
 from app.services.memory_service import (
@@ -96,10 +97,15 @@ class MarkPaidRequest(BaseModel):
     invoice_number: str
     user_id: str = "default"
 
+class UpgradePlanRequest(BaseModel):
+    user_id: str
+    plan: str  # apex / zenith / free
+
 
 # ── FCM Helper ─────────────────────────────────────────────
 def get_fcm_token(user_id: str = "default") -> str:
     return get_fcm_token_db(user_id)
+
 
 async def send_fcm_notification(title: str, body: str, data: dict = {},
                                  user_id: str = "default"):
@@ -146,6 +152,54 @@ async def send_fcm_to_all_users(title: str, body: str, data: dict = {}):
             await send_fcm_notification(title, body, data, user["user_id"])
 
 
+# ── Plan Helper ────────────────────────────────────────────
+def _plan_label(plan: str) -> str:
+    labels = {
+        'trial': '✨ Trial',
+        'apex': '⚡ Apex',
+        'zenith': '👑 Zenith',
+        'free': '🆓 Free',
+    }
+    return labels.get(plan, '🆓 Free')
+
+
+def _limit_response(plan_info: dict) -> dict:
+    """Response saat user melebihi limit"""
+    plan = plan_info.get("plan", "free")
+    daily_commands = plan_info.get("daily_commands", 0)
+    daily_limit = plan_info.get("daily_limit", 10)
+    remaining = max(0, daily_limit - daily_commands)
+
+    if plan == 'free':
+        reply = (
+            f"⚠️ *Batas harian tercapai!*\n\n"
+            f"Kamu sudah menggunakan {daily_commands}/{daily_limit} perintah hari ini.\n\n"
+            f"🔄 Limit reset otomatis tengah malam.\n\n"
+            f"Atau upgrade ke *⚡ Apex* untuk unlimited perintah!\n"
+            f"Hanya *Rp 120.000/bulan* — coba gratis 3 hari!"
+        )
+    else:
+        reply = f"⚠️ Batas penggunaan tercapai. Hubungi support."
+
+    return {
+        "status": "limit_reached",
+        "message": reply,
+        "response": reply,
+        "emails": [],
+        "parsed": {
+            "intent": "limit_reached",
+            "summary": reply,
+            "action": "limit",
+            "needs_confirmation": False,
+            "draft": "",
+            "reply": reply,
+            "reply_to": "",
+            "subject": "",
+            "plan_info": plan_info
+        }
+    }
+
+
 # ── Broadcast Helper ───────────────────────────────────────
 async def _run_broadcast(phones: list, message: str, user_id: str = "default"):
     try:
@@ -185,6 +239,8 @@ async def save_user_profile_endpoint(request: SaveUserProfileRequest):
             city=request.city,
             briefing_hour=request.briefing_hour
         )
+        # Init trial otomatis saat save profile
+        init_user_plan(request.user_id)
         return {"status": "success", "message": f"Profil {request.name} tersimpan"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -194,15 +250,151 @@ async def save_user_profile_endpoint(request: SaveUserProfileRequest):
 async def get_user_profile_endpoint(user_id: str):
     try:
         profile = get_user_profile(user_id)
-        return {"status": "success", "profile": profile}
+        plan_info = get_user_plan(user_id)
+        return {
+            "status": "success",
+            "profile": profile,
+            "plan": plan_info
+        }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
+# ── Plan Endpoints ─────────────────────────────────────────
+
+@router.get("/plan/{user_id}")
+async def get_plan(user_id: str):
+    """Ambil info plan user — trial/free/apex/zenith"""
+    try:
+        init_user_plan(user_id)
+        plan_info = get_user_plan(user_id)
+        plan = plan_info.get("plan", "free")
+
+        # Info fitur per plan
+        features = {
+            'trial': [
+                "✅ Semua fitur Apex & Zenith",
+                "✅ Unlimited perintah",
+                "✅ Unlimited email & WA",
+                "✅ Broadcast unlimited",
+                "✅ Meeting transcriber",
+                f"⏰ Berakhir dalam {plan_info.get('trial_days_left', 0)} hari",
+            ],
+            'apex': [
+                "✅ Unlimited perintah",
+                "✅ Email auto-reply unlimited",
+                "✅ Invoice & payment unlimited",
+                "✅ WA auto-reply unlimited",
+                "✅ Broadcast 500 kontak",
+                "✅ Quotation PDF unlimited",
+                "✅ Meeting transcriber 5x/bulan",
+                "✅ Personal Brain & follow up",
+            ],
+            'zenith': [
+                "👑 Semua fitur Apex",
+                "👑 Unlimited segalanya",
+                "👑 Broadcast unlimited kontak",
+                "👑 Meeting transcriber unlimited",
+                "👑 Sales AI closing premium",
+                "👑 Multi-user (2 akun)",
+                "👑 White label",
+                "👑 Priority support 24/7",
+                "👑 Fitur eksklusif perusahaan besar",
+            ],
+            'free': [
+                f"⚡ {plan_info.get('daily_commands', 0)}/{plan_info.get('daily_limit', 10)} perintah hari ini",
+                "❌ Tidak bisa broadcast",
+                "❌ Invoice terbatas",
+                "❌ Meeting transcriber tidak tersedia",
+                "🔄 Reset tiap tengah malam",
+            ],
+        }
+
+        return {
+            "status": "success",
+            "plan": plan_info,
+            "label": _plan_label(plan),
+            "features": features.get(plan, features['free']),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/plan/upgrade")
+async def upgrade_plan(request: UpgradePlanRequest):
+    """Upgrade plan user ke apex/zenith"""
+    try:
+        if request.plan not in ['apex', 'zenith', 'free']:
+            return {"status": "error", "message": "Plan tidak valid. Pilih: apex/zenith/free"}
+        upgrade_user_plan(request.user_id, request.plan)
+        plan_info = get_user_plan(request.user_id)
+        return {
+            "status": "success",
+            "message": f"🎉 Plan berhasil diupgrade ke {_plan_label(request.plan)}!",
+            "plan": plan_info
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+# ── Main Chat Endpoint ─────────────────────────────────────
+
 @router.post("/")
 async def chat(request: CommandRequest):
-    result = await process_command(request.message, request.user_id)
-    return result
+    """Main command endpoint dengan plan limit check"""
+    try:
+        # Skip limit check untuk user default (sistem internal)
+        if request.user_id and request.user_id != "default":
+            # Init trial kalau belum ada
+            init_user_plan(request.user_id)
+
+            # Cek plan dan limit
+            plan_info = get_user_plan(request.user_id)
+
+            if not plan_info.get("can_use", True):
+                return _limit_response(plan_info)
+
+            # Increment counter
+            increment_daily_commands(request.user_id)
+
+        # Proses perintah
+        result = await process_command(request.message, request.user_id)
+
+        # Tambah info plan ke response
+        if request.user_id and request.user_id != "default":
+            try:
+                plan_info = get_user_plan(request.user_id)
+                if result.get("parsed"):
+                    result["parsed"]["plan_info"] = {
+                        "plan": plan_info.get("plan"),
+                        "is_trial": plan_info.get("is_trial"),
+                        "trial_days_left": plan_info.get("trial_days_left"),
+                        "daily_commands": plan_info.get("daily_commands"),
+                        "daily_limit": plan_info.get("daily_limit"),
+                    }
+            except:
+                pass
+
+        return result
+
+    except Exception as e:
+        print(f"[CHAT ERROR] {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "response": "Terjadi kesalahan. Coba lagi ya!",
+            "emails": [],
+            "parsed": {
+                "intent": "error",
+                "summary": "Error",
+                "action": "error",
+                "needs_confirmation": False,
+                "draft": "",
+                "reply": "Terjadi kesalahan. Coba lagi ya!",
+                "reply_to": "",
+                "subject": ""
+            }
+        }
 
 
 @router.get("/emails")
@@ -342,6 +534,16 @@ async def save_profile(request: SaveProfileRequest):
 @router.post("/broadcast")
 async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks):
     try:
+        # Cek plan untuk broadcast
+        if request.user_id and request.user_id != "default":
+            plan_info = get_user_plan(request.user_id)
+            plan = plan_info.get("plan", "free")
+            if plan == "free":
+                return {
+                    "status": "error",
+                    "message": "⚠️ Broadcast hanya tersedia untuk plan Apex dan Zenith.\n\nUpgrade sekarang mulai Rp 120.000/bulan!"
+                }
+
         customers = get_all_customers()
         if not customers:
             return {"status": "error", "message": "Tidak ada customer ditemukan"}
@@ -362,11 +564,9 @@ async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks
 
 @router.get("/invoices/{user_id}")
 async def get_invoices(user_id: str):
-    """✅ Ambil semua invoice untuk dashboard Flutter"""
     try:
         if not user_id or user_id == "default":
             return {"status": "error", "invoices": [], "message": "User tidak valid"}
-
         from app.services.payment_service import get_all_invoices, init_payment_db
         init_payment_db()
         invoices = get_all_invoices(user_id)
@@ -377,11 +577,9 @@ async def get_invoices(user_id: str):
 
 @router.post("/invoices/mark-paid")
 async def mark_invoice_paid_endpoint(request: MarkPaidRequest):
-    """✅ Tandai invoice lunas dari Flutter"""
     try:
         if not request.user_id or request.user_id == "default":
             return {"status": "error", "message": "User tidak valid"}
-
         from app.services.payment_service import mark_invoice_paid
         success = mark_invoice_paid(request.invoice_number, request.user_id)
         if success:
@@ -394,28 +592,22 @@ async def mark_invoice_paid_endpoint(request: MarkPaidRequest):
 
 @router.get("/invoices/summary/{user_id}")
 async def get_invoice_summary(user_id: str):
-    """✅ Ambil summary invoice untuk dashboard cards"""
     try:
         if not user_id or user_id == "default":
             return {"status": "error", "summary": {}}
-
         from app.services.payment_service import get_all_invoices, init_payment_db
         init_payment_db()
         invoices = get_all_invoices(user_id)
-
         unpaid = [i for i in invoices if i['status'] == 'unpaid']
         paid = [i for i in invoices if i['status'] == 'paid']
-        total_unpaid = sum(i['amount'] for i in unpaid)
-        total_paid = sum(i['amount'] for i in paid)
-
         return {
             "status": "success",
             "summary": {
                 "total_invoices": len(invoices),
                 "unpaid_count": len(unpaid),
                 "paid_count": len(paid),
-                "total_unpaid": total_unpaid,
-                "total_paid": total_paid,
+                "total_unpaid": sum(i['amount'] for i in unpaid),
+                "total_paid": sum(i['amount'] for i in paid),
             }
         }
     except Exception as e:
@@ -423,6 +615,7 @@ async def get_invoice_summary(user_id: str):
 
 
 # ── Personal Brain Endpoints ───────────────────────────────
+
 @router.post("/brain/save")
 async def brain_save(request: SaveBrainRequest):
     try:
@@ -466,6 +659,7 @@ async def brain_follow_ups(user_id: str):
 
 
 # ── Meeting Transcriber ────────────────────────────────────
+
 @router.post("/transcribe-meeting")
 async def transcribe_meeting(
     background_tasks: BackgroundTasks,
@@ -476,11 +670,19 @@ async def transcribe_meeting(
     user_id: str = Form(default="default"),
 ):
     try:
+        # Cek plan untuk meeting transcriber
+        if user_id and user_id != "default":
+            plan_info = get_user_plan(user_id)
+            plan = plan_info.get("plan", "free")
+            if plan == "free":
+                return {
+                    "status": "error",
+                    "message": "⚠️ Meeting Transcriber hanya tersedia untuk plan Apex dan Zenith."
+                }
+
         filename = audio.filename or "audio.mp3"
         suffix = os.path.splitext(filename)[1] or ".mp3"
-        with tempfile.NamedTemporaryFile(
-            delete=False, suffix=suffix, dir="/tmp"
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir="/tmp") as tmp:
             content = await audio.read()
             tmp.write(content)
             tmp_path = tmp.name
@@ -516,14 +718,12 @@ async def _process_meeting_background(
 ):
     try:
         from app.services.transcriber_service import process_meeting
-
         result = await process_meeting(
             audio_path=audio_path,
             meeting_title=meeting_title,
             participant_emails=participant_emails,
             language=language
         )
-
         if result["status"] == "success":
             await send_fcm_notification(
                 title="🎙️ Meeting Selesai Diproses!",
@@ -538,12 +738,10 @@ async def _process_meeting_background(
                 data={"type": "meeting_error"},
                 user_id=user_id
             )
-
         try:
             os.remove(audio_path)
         except:
             pass
-
     except Exception as e:
         print(f"[MEETING BG ERROR] {e}")
         await send_fcm_notification(
@@ -553,6 +751,8 @@ async def _process_meeting_background(
             user_id=user_id
         )
 
+
+# ── WhatsApp Webhook ───────────────────────────────────────
 
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
