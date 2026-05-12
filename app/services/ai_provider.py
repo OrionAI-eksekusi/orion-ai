@@ -22,10 +22,9 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514")
 _circuit = {
     "claude":  {"failures": 0, "last_failure": 0, "open": False},
     "groq":    {"failures": 0, "last_failure": 0, "open": False},
-    "gemini":  {"failures": 0, "last_failure": 0, "open": False},
 }
-_FAILURE_THRESHOLD = 5      # berapa kali gagal sebelum circuit open
-_RECOVERY_TIMEOUT  = 30     # detik sebelum circuit dicoba lagi
+_FAILURE_THRESHOLD = 5
+_RECOVERY_TIMEOUT  = 30
 
 # ── Request Stats ─────────────────────────────────────────
 _stats = defaultdict(lambda: {"success": 0, "failure": 0, "latency_ms": []})
@@ -50,10 +49,11 @@ PRINSIP UTAMA:
 
 # ── Circuit Breaker ───────────────────────────────────────
 def _is_circuit_open(provider: str) -> bool:
+    if provider not in _circuit:
+        return False
     cb = _circuit[provider]
     if not cb["open"]:
         return False
-    # Cek apakah sudah recovery timeout
     if time.time() - cb["last_failure"] > _RECOVERY_TIMEOUT:
         logger.info(f"[CIRCUIT] {provider.upper()} circuit HALF-OPEN — mencoba lagi...")
         cb["open"] = False
@@ -63,31 +63,33 @@ def _is_circuit_open(provider: str) -> bool:
 
 
 def _record_failure(provider: str):
+    if provider not in _circuit:
+        return
     cb = _circuit[provider]
     cb["failures"] += 1
     cb["last_failure"] = time.time()
     _stats[provider]["failure"] += 1
     if cb["failures"] >= _FAILURE_THRESHOLD:
         if not cb["open"]:
-            logger.warning(f"[CIRCUIT] {provider.upper()} circuit OPEN — terlalu banyak error!")
+            logger.warning(f"[CIRCUIT] {provider.upper()} circuit OPEN!")
         cb["open"] = True
 
 
 def _record_success(provider: str, latency_ms: float):
+    if provider not in _circuit:
+        return
     cb = _circuit[provider]
     cb["failures"] = 0
     cb["open"] = False
     _stats[provider]["success"] += 1
     _stats[provider]["latency_ms"].append(latency_ms)
-    # Keep only last 100 latency records
     if len(_stats[provider]["latency_ms"]) > 100:
         _stats[provider]["latency_ms"] = _stats[provider]["latency_ms"][-100:]
 
 
 def get_health_status() -> dict:
-    """Ambil status kesehatan semua provider"""
     status = {}
-    for provider in ["claude", "groq", "gemini"]:
+    for provider in ["claude", "groq"]:
         cb = _circuit[provider]
         latencies = _stats[provider]["latency_ms"]
         avg_latency = sum(latencies) / len(latencies) if latencies else 0
@@ -106,6 +108,9 @@ def get_health_status() -> dict:
 async def _call_groq(system_prompt: str, user_message: str) -> str:
     if _is_circuit_open("groq"):
         raise RuntimeError("Groq circuit breaker OPEN")
+
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY tidak ada")
 
     start = time.time()
     try:
@@ -126,46 +131,6 @@ async def _call_groq(system_prompt: str, user_message: str) -> str:
         return result
     except Exception as e:
         _record_failure("groq")
-        raise e
-
-
-async def _call_gemini(system_prompt: str, user_message: str) -> str:
-    if _is_circuit_open("gemini"):
-        raise RuntimeError("Gemini circuit breaker OPEN")
-
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY tidak ada")
-
-    start = time.time()
-    try:
-        import httpx
-        full_system = f"{ORION_GLOBAL_SYSTEM}\n\n{system_prompt}".strip()
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "system_instruction": {"parts": [{"text": full_system}]},
-            "contents": [{"role": "user", "parts": [{"text": user_message}]}],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 2048,
-                "topP": 0.95,
-            }
-        }
-        async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.post(url, json=payload)
-            if res.status_code != 200:
-                raise ValueError(f"Gemini HTTP {res.status_code}: {res.text}")
-            data = res.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                raise ValueError(f"Gemini tidak return candidates")
-            parts = candidates[0].get("content", {}).get("parts", [])
-            if not parts:
-                raise ValueError(f"Gemini tidak return parts")
-            result = parts[0].get("text", "")
-            _record_success("gemini", (time.time() - start) * 1000)
-            return result
-    except Exception as e:
-        _record_failure("gemini")
         raise e
 
 
@@ -214,29 +179,23 @@ async def _call_claude(system_prompt: str, user_message: str) -> str:
 async def call_llm(system_prompt: str, user_message: str,
                    max_retries: int = 2) -> str:
     """
-    Smart LLM caller dengan:
+    Smart LLM caller:
+    - Primary: Claude
+    - Fallback: Groq
     - Circuit breaker per provider
     - Auto retry dengan exponential backoff
-    - Fallback chain: Claude → Groq → Gemini
-    - Stats tracking
     """
     provider = AI_PROVIDER.strip().lower()
 
-    # Urutan fallback: primary → alternatif
-    fallback_chain = []
-    if provider == "claude":
-        fallback_chain = ["claude", "groq", "gemini"]
-    elif provider == "groq":
-        fallback_chain = ["groq", "claude", "gemini"]
-    elif provider == "gemini":
-        fallback_chain = ["gemini", "claude", "groq"]
+    # Fallback chain: Claude → Groq only (Gemini dihapus — quota habis)
+    if provider == "groq":
+        fallback_chain = ["groq", "claude"]
     else:
-        fallback_chain = ["claude", "groq", "gemini"]
+        fallback_chain = ["claude", "groq"]
 
     callers = {
         "claude": _call_claude,
         "groq":   _call_groq,
-        "gemini": _call_gemini,
     }
 
     last_error = None
@@ -250,8 +209,6 @@ async def call_llm(system_prompt: str, user_message: str,
         # Skip kalau tidak ada API key
         if attempt_provider == "groq" and not GROQ_API_KEY:
             continue
-        if attempt_provider == "gemini" and not GEMINI_API_KEY:
-            continue
         if attempt_provider == "claude" and not CLAUDE_API_KEY:
             continue
 
@@ -261,7 +218,7 @@ async def call_llm(system_prompt: str, user_message: str,
         for retry in range(max_retries + 1):
             try:
                 if retry > 0:
-                    wait = 2 ** retry  # 2, 4 detik
+                    wait = 2 ** retry
                     logger.info(f"[LLM] Retry {retry} untuk {attempt_provider.upper()} dalam {wait}s...")
                     await asyncio.sleep(wait)
 
@@ -276,48 +233,37 @@ async def call_llm(system_prompt: str, user_message: str,
                 last_error = e
                 error_msg = str(e).lower()
 
-                # Rate limit → langsung fallback, tidak retry
                 is_rate_limit = any(x in error_msg for x in [
                     "rate limit", "429", "quota", "resource exhausted",
                     "limit exceeded", "tokens per day"
                 ])
-
-                # Model not found → langsung fallback
                 is_model_error = any(x in error_msg for x in [
                     "not_found_error", "model", "404"
                 ])
 
-                if is_rate_limit:
-                    logger.warning(f"[LLM] {attempt_provider.upper()} rate limit → fallback")
-                    break  # Langsung ke provider berikutnya
-                elif is_model_error:
-                    logger.error(f"[LLM] {attempt_provider.upper()} model error → fallback")
+                if is_rate_limit or is_model_error:
+                    logger.warning(f"[LLM] {attempt_provider.upper()} {'rate limit' if is_rate_limit else 'model error'} → fallback")
                     break
                 else:
                     logger.error(f"[LLM] {attempt_provider.upper()} error (attempt {retry+1}): {e}")
                     if retry == max_retries:
-                        break  # Coba provider berikutnya
+                        break
 
-    # Semua provider gagal → kasih response darurat
+    # Semua provider gagal
     logger.critical(f"[LLM] 🚨 SEMUA PROVIDER GAGAL! Last error: {last_error}")
-
-    # Emergency response — tidak crash app
-    return "Maaf, sistem AI sedang mengalami gangguan sementara. Silakan coba lagi dalam beberapa menit. Tim kami sedang memantau situasi ini."
+    return "Maaf, sistem AI sedang mengalami gangguan sementara. Silakan coba lagi dalam beberapa menit."
 
 
 def parse_json_response(ai_response: str):
-    """Parse JSON dari AI response dengan multiple fallback"""
     if not ai_response:
         return None
 
-    # Method 1: Direct parse
     try:
         clean = ai_response.replace('```json', '').replace('```', '').strip()
         return json.loads(clean)
     except Exception:
         pass
 
-    # Method 2: Extract JSON object
     try:
         match = re.search(r'\{.*\}', ai_response, re.DOTALL)
         if match:
@@ -325,7 +271,6 @@ def parse_json_response(ai_response: str):
     except Exception:
         pass
 
-    # Method 3: Extract JSON array
     try:
         match = re.search(r'\[.*\]', ai_response, re.DOTALL)
         if match:
