@@ -300,8 +300,8 @@ def get_user_plan(user_id: str) -> dict:
     # Limit berdasarkan plan
     limits = {
         'trial':  999999,
-        'apex':   999999,
-        'zenith': 999999,
+        'apex':   100,
+        'zenith': 200,
         'free':   10,
     }
     daily_limit = limits.get(plan, 10)
