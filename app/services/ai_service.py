@@ -8,17 +8,70 @@ load_dotenv()
 
 # ── Detect casual/umum ────────────────────────────────────
 def is_casual_message(message: str) -> bool:
-    casual_keywords = [
-        'halo', 'hai', 'hello', 'hi', 'apa kabar', 'selamat',
-        'pagi', 'siang', 'malam', 'sore', 'makasih', 'terima kasih',
-        'ok', 'oke', 'siap', 'mantap', 'keren', 'bagus', 'good',
-        'siapa kamu', 'kamu apa', 'orion itu', 'apa itu', 'gimana',
-        'tolong', 'bantu', 'bisa', 'test', 'coba', 'help'
-    ]
+    """
+    Hanya deteksi pesan yang BENAR-BENAR casual/greeting.
+    Tidak lagi pakai rule <= 4 kata karena terlalu agresif.
+    """
     msg_lower = message.lower().strip()
-    if len(msg_lower.split()) <= 4:
-        return True
-    return any(kw in msg_lower for kw in casual_keywords)
+    words = msg_lower.split()
+
+    # Keyword bisnis — TIDAK boleh casual
+    business_keywords = [
+        'tagih', 'nagih', 'invoice', 'bayar', 'pembayaran',
+        'email', 'balas', 'inbox', 'broadcast', 'kirim',
+        'quotation', 'quote', 'penawaran', 'harga', 'berapa',
+        'catat', 'ingat', 'simpan', 'follow', 'reminder',
+        'meeting', 'notulen', 'laporan', 'file', 'dokumen',
+        'sakit', 'demam', 'pusing', 'capek', 'lelah',
+        'makan', 'tidur', 'kerja', 'bisnis', 'proyek',
+        'customer', 'klien', 'supplier', 'investor',
+        'jadwal', 'agenda', 'task', 'tugas', 'deadline',
+        'masalah', 'problem', 'error', 'bug', 'eror',
+        'buat', 'buatkan', 'generate', 'analisa', 'cek',
+        'bantu', 'tolong', 'perlu', 'butuh', 'minta',
+        'hari ini', 'besok', 'minggu', 'bulan', 'tahun',
+        'saya', 'aku', 'gue', 'kita', 'kami', 'mereka',
+    ]
+
+    # Kalau ada keyword bisnis → BUKAN casual
+    for kw in business_keywords:
+        if kw in msg_lower:
+            return False
+
+    # Greeting murni — 1-3 kata saja
+    pure_greetings = [
+        'halo', 'hai', 'hello', 'hi', 'hey', 'hei',
+        'pagi', 'siang', 'sore', 'malam',
+        'ok', 'oke', 'okay', 'sip', 'siap',
+        'makasih', 'thanks', 'thx',
+        'mantap', 'keren', 'bagus', 'good',
+        'yes', 'ya', 'yep', 'nope', 'no',
+        'done', 'selesai', 'beres',
+    ]
+
+    # Kalau 1-2 kata dan cocok greeting → casual
+    if len(words) <= 2:
+        for greeting in pure_greetings:
+            if msg_lower == greeting or msg_lower.startswith(greeting):
+                return True
+        return False
+
+    # Kalau 3-4 kata, cek apakah pure greeting
+    if len(words) <= 4:
+        greeting_starters = [
+            'halo orion', 'hai orion', 'hello orion', 'hi orion',
+            'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam',
+            'apa kabar', 'gimana kabar', 'terima kasih', 'makasih bro',
+            'ok makasih', 'oke thanks', 'siap makasih',
+        ]
+        for starter in greeting_starters:
+            if msg_lower.startswith(starter):
+                return True
+        return False
+
+    # Lebih dari 4 kata → BUKAN casual, biarkan AI handle
+    return False
+
 
 # ── Detect Personal Brain commands ───────────────────────
 def is_brain_command(message: str) -> bool:
@@ -32,6 +85,7 @@ def is_brain_command(message: str) -> bool:
     ]
     return any(kw in message.lower() for kw in keywords)
 
+
 # ── Detect Payment/Invoice commands ──────────────────────
 def is_payment_command(message: str) -> bool:
     keywords = [
@@ -44,6 +98,7 @@ def is_payment_command(message: str) -> bool:
     ]
     return any(kw in message.lower() for kw in keywords)
 
+
 # ── Detect request quotation ──────────────────────────────
 def is_quote_request(message: str) -> bool:
     keywords = [
@@ -53,6 +108,7 @@ def is_quote_request(message: str) -> bool:
     ]
     return any(kw in message.lower() for kw in keywords)
 
+
 # ── Detect perintah kirim file ────────────────────────────
 def is_send_file_command(message: str) -> bool:
     keywords = [
@@ -61,6 +117,7 @@ def is_send_file_command(message: str) -> bool:
         'forward file', 'kirimkan ke', 'tolong kirim', 'kirim data'
     ]
     return any(kw in message.lower() for kw in keywords)
+
 
 # ── Extract info dari perintah kirim file ─────────────────
 async def extract_send_file_info(message: str) -> dict:
@@ -85,6 +142,7 @@ Respond HANYA dengan JSON."""
             "message_body": "Terlampir file yang diminta.",
             "subject": "File dari Orion AI"
         }
+
 
 # ── Extract Brain info dari perintah ─────────────────────
 async def extract_brain_info(message: str) -> dict:
@@ -167,7 +225,6 @@ async def process_command(message: str, user_id: str = "default"):
 
             msg_lower = message.lower()
 
-            # Mode Manual: Kirim tagihan sekarang via perintah
             kirim_keywords = ['kirim tagihan', 'kirimkan tagihan', 'send invoice',
                                'kirim invoice', 'tagihkan sekarang', 'ingatkan sekarang']
             if any(kw in msg_lower for kw in kirim_keywords):
@@ -203,7 +260,6 @@ async def process_command(message: str, user_id: str = "default"):
                     }
                 }
 
-            # Cek konfirmasi lunas
             if any(kw in msg_lower for kw in ['lunas', 'sudah bayar', 'konfirmasi bayar', 'bukti transfer']):
                 reply = "✅ Untuk konfirmasi pembayaran, sebutkan nomor invoice nya!\n\nContoh: 'INV-20260509123456 sudah lunas'"
                 inv_match = re.search(r'INV-[\w\d]+', message.upper())
@@ -232,7 +288,6 @@ async def process_command(message: str, user_id: str = "default"):
                     }
                 }
 
-            # Cek daftar invoice
             if any(kw in msg_lower for kw in ['daftar invoice', 'list tagihan', 'semua tagihan', 'tagihan saya', 'daftar tagihan']):
                 invoices = get_all_invoices(user_id)
                 if not invoices:
@@ -268,7 +323,6 @@ async def process_command(message: str, user_id: str = "default"):
                     }
                 }
 
-            # Buat invoice baru
             invoice_info = await extract_invoice_from_command(message)
             customer_name = invoice_info.get("customer_name", "").strip()
             customer_phone = invoice_info.get("customer_phone", "").strip()
@@ -332,7 +386,6 @@ async def process_command(message: str, user_id: str = "default"):
                     reply += f"⚠️ Invoice dibuat tapi WA gagal dikirim.\nCoba manual: 'kirim tagihan {invoice['invoice_number']}'"
             else:
                 reply += f"💡 Tambahkan nomor WA customer biar Orion bisa auto kirim & reminder!\n"
-                reply += f"Contoh: 'tagih {customer_name} {format_amount(amount)} {due_date} 08123456789'"
 
             return {
                 "status": "success",
@@ -706,7 +759,7 @@ Maksimal 2-3 kalimat saja."""
             }
         }
 
-    # ── Handle Email ──────────────────────────────────────
+    # ── Handle Email + General AI ─────────────────────────
     email_context = ""
     emails = []
     target_email = None
@@ -745,17 +798,22 @@ isi: {target_email.get('body', target_email.get('snippet', ''))}
 Gunakan field 'from' di atas sebagai reply_to."""
 
         except Exception as e:
+            print(f"[EMAIL LOAD ERROR] {e}")
             email_context = "Gagal membaca email."
 
-    system_prompt = f"""Kamu adalah Orion AI, asisten eksekusi perintah bisnis.
+    # ── General AI Handler — untuk semua perintah lain ──
+    system_prompt = f"""Kamu adalah Orion AI, asisten eksekusi perintah bisnis yang sangat cerdas.
 {email_context}
-Tugasmu adalah memahami perintah pengguna dan memberikan respons yang helpful.
+
+Tugasmu adalah memahami perintah pengguna dan memberikan respons yang helpful dan actionable.
 
 PENTING:
 1. Jawab HANYA dengan 1 JSON object saja, tanpa teks lain, tanpa backtick.
 2. needs_confirmation hanya TRUE untuk perintah balas email.
-3. Untuk pertanyaan umum → needs_confirmation: false, isi field "reply".
+3. Untuk pertanyaan umum atau percakapan → needs_confirmation: false, isi field "reply" dengan jawaban lengkap.
 4. Field reply_to WAJIB diisi dengan email asli jika ada email konteks.
+5. Kalau user curhat atau cerita sesuatu → respond dengan empati di field "reply".
+6. Kalau user tanya sesuatu → jawab dengan informatif di field "reply".
 
 Format JSON:
 {{
@@ -764,49 +822,86 @@ Format JSON:
     "action": "detail aksi",
     "needs_confirmation": false,
     "draft": "draft email jika perlu dikirim, kosong jika tidak",
-    "reply": "jawaban langsung untuk pertanyaan umum",
+    "reply": "jawaban lengkap untuk user",
     "reply_to": "email asli pengirim jika ada",
     "subject": "subject email jika ada"
 }}"""
 
-    ai_response = await call_llm(system_prompt, message)
-    parsed = parse_json_response(ai_response)
+    try:
+        ai_response = await call_llm(system_prompt, message)
+        parsed = parse_json_response(ai_response)
 
-    if parsed:
-        if is_email_command and parsed.get('draft') and parsed.get('reply_to'):
-            parsed["needs_confirmation"] = True
+        if parsed:
+            if is_email_command and parsed.get('draft') and parsed.get('reply_to'):
+                parsed["needs_confirmation"] = True
+            else:
+                parsed["needs_confirmation"] = False
+
+            reply_to = parsed.get("reply_to", "")
+            if not reply_to or "@" not in reply_to:
+                if target_email:
+                    from_field = target_email.get("from", "")
+                    match_email = re.search(r'<(.+?)>', from_field)
+                    if match_email:
+                        parsed["reply_to"] = match_email.group(1)
+                    else:
+                        parsed["reply_to"] = from_field
         else:
-            parsed["needs_confirmation"] = False
+            # Kalau JSON gagal parse → buat parsed manual dari raw response
+            parsed = {
+                "intent": "general",
+                "summary": ai_response[:100],
+                "action": "reply",
+                "needs_confirmation": False,
+                "draft": "",
+                "reply": ai_response,
+                "reply_to": "",
+                "subject": ""
+            }
 
-        reply_to = parsed.get("reply_to", "")
-        if not reply_to or "@" not in reply_to:
-            if target_email:
-                from_field = target_email.get("from", "")
-                match_email = re.search(r'<(.+?)>', from_field)
-                if match_email:
-                    parsed["reply_to"] = match_email.group(1)
-                else:
-                    parsed["reply_to"] = from_field
+        return {
+            "status": "success",
+            "message": message,
+            "response": parsed.get("reply", ai_response),
+            "emails": emails,
+            "parsed": parsed
+        }
 
-    return {
-        "status": "success",
-        "message": message,
-        "response": json.dumps(parsed) if parsed else ai_response,
-        "emails": emails,
-        "parsed": parsed
-    }
+    except Exception as e:
+        print(f"[GENERAL AI ERROR] {e}")
+        # Fallback response yang masih berguna
+        reply = "Maaf, saya sedang mengalami gangguan. Coba ulangi perintah kamu ya! 🙏"
+        return {
+            "status": "error",
+            "message": message,
+            "response": reply,
+            "emails": [],
+            "parsed": {
+                "intent": "error",
+                "summary": reply,
+                "action": "error",
+                "needs_confirmation": False,
+                "draft": "",
+                "reply": reply,
+                "reply_to": "",
+                "subject": ""
+            }
+        }
 
 
 async def generate_briefing():
-    from app.services.gmail_service import get_recent_emails
-
-    all_emails = get_recent_emails(max_results=10)
-    emails = [e for e in all_emails if
-        'azvickyfadzry02@gmail.com' not in e.get('from', '') and
-        'noreply' not in e.get('from', '').lower() and
-        'whatsapp' not in e.get('from', '').lower() and
-        e.get('subject', '').strip() not in ['No Subject', '']
-    ]
+    try:
+        from app.services.gmail_service import get_recent_emails
+        all_emails = get_recent_emails(max_results=10)
+        emails = [e for e in all_emails if
+            'azvickyfadzry02@gmail.com' not in e.get('from', '') and
+            'noreply' not in e.get('from', '').lower() and
+            'whatsapp' not in e.get('from', '').lower() and
+            e.get('subject', '').strip() not in ['No Subject', '']
+        ]
+    except Exception as e:
+        print(f"[BRIEFING EMAIL ERROR] {e}")
+        emails = []
 
     system_prompt = """Kamu adalah Orion AI. Analisa email berikut, lalu buat ringkasan prioritas.
 
@@ -823,22 +918,37 @@ Jawab HANYA dengan JSON murni tanpa backtick:
     "summary": "Ringkasan 1 kalimat kondisi inbox hari ini"
 }"""
 
-    ai_response = await call_llm(system_prompt, f"Email:\n{json.dumps(emails, indent=2)}")
-    return parse_json_response(ai_response) or {}
+    try:
+        ai_response = await call_llm(system_prompt, f"Email:\n{json.dumps(emails, indent=2)}")
+        return parse_json_response(ai_response) or {
+            "urgent": [], "bisa_nanti": [], "arsip": [],
+            "summary": "Tidak dapat menganalisa email saat ini."
+        }
+    except Exception as e:
+        print(f"[BRIEFING AI ERROR] {e}")
+        return {"urgent": [], "bisa_nanti": [], "arsip": [],
+                "summary": "Email tidak dapat dimuat saat ini."}
 
 
 async def extract_tasks():
-    from app.services.gmail_service import get_recent_emails
-    from app.services.database_service import get_wa_messages
-    from app.services.calendar_service import add_calendar_event
+    try:
+        from app.services.gmail_service import get_recent_emails
+        all_emails = get_recent_emails(max_results=10)
+        emails = [e for e in all_emails if
+            'azvickyfadzry02@gmail.com' not in e.get('from', '') and
+            'noreply' not in e.get('from', '').lower() and
+            e.get('subject', '').strip() not in ['No Subject', '']
+        ]
+    except Exception as e:
+        print(f"[TASKS EMAIL ERROR] {e}")
+        emails = []
 
-    all_emails = get_recent_emails(max_results=10)
-    emails = [e for e in all_emails if
-        'azvickyfadzry02@gmail.com' not in e.get('from', '') and
-        'noreply' not in e.get('from', '').lower() and
-        e.get('subject', '').strip() not in ['No Subject', '']
-    ]
-    wa_messages = get_wa_messages(limit=10)
+    try:
+        from app.services.database_service import get_wa_messages
+        wa_messages = get_wa_messages(limit=10)
+    except Exception as e:
+        print(f"[TASKS WA ERROR] {e}")
+        wa_messages = []
 
     system_prompt = """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut.
 Deteksi semua task, meeting, deadline, permintaan file, dan follow up.
@@ -862,16 +972,21 @@ Jawab HANYA dengan JSON murni tanpa backtick:
 
 Jika tidak ada task, kembalikan tasks sebagai array kosong."""
 
-    ai_response = await call_llm(
-        system_prompt,
-        f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
-    )
-    parsed = parse_json_response(ai_response) or {"tasks": [], "summary": "Tidak ada task"}
+    try:
+        ai_response = await call_llm(
+            system_prompt,
+            f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
+        )
+        parsed = parse_json_response(ai_response) or {"tasks": [], "summary": "Tidak ada task"}
+    except Exception as e:
+        print(f"[TASKS AI ERROR] {e}")
+        return {"tasks": [], "summary": "Tasks tidak dapat dimuat saat ini."}
 
     if parsed.get("tasks"):
         for task in parsed["tasks"]:
             if task.get("type") in ["meeting", "deadline"] and task.get("due"):
                 try:
+                    from app.services.calendar_service import add_calendar_event
                     add_calendar_event(
                         title=task.get("title", ""),
                         description=f"Dari: {task.get('from', '')}\n{task.get('detail', '')}",
@@ -915,62 +1030,24 @@ IDENTITAS KAMU:
 - Bahasa: Indonesia santai tapi profesional, tidak formal kaku
 - Gaya: Conversational, engaging, selalu ada energi positif
 
-FRAMEWORK SALES YANG KAMU PAKAI:
+FRAMEWORK SALES:
+1. RAPPORT — sapa dengan nama kalau tahu, match energy customer
+2. NEED DISCOVERY — gali kebutuhan dengan natural
+3. VALUE — highlight manfaat, bukan fitur teknis
+4. OBJECTION HANDLING — empati dulu, baru solusi
+5. CLOSING — pandu langkah selanjutnya dengan jelas
+6. FOLLOW UP — tidak pushy, jaga hubungan
 
-1. RAPPORT BUILDING
-- Selalu sapa dengan nama kalau tahu
-- Match energy customer — kalau santai ya santai, kalau serius ya serius
-- Buat customer merasa didengar dan dipahami
+ATURAN:
+- MAKSIMAL 3-4 kalimat per balasan
+- JANGAN kaku seperti robot
+- SELALU akhiri dengan pertanyaan atau CTA natural
+- Emoji 1-2 per pesan, tidak berlebihan
 
-2. NEED DISCOVERY
-- Kalau belum tahu kebutuhan → tanya dengan natural, bukan seperti form
-- "Boleh tahu untuk keperluan apa kak? Biar saya bisa kasih rekomendasi yang paling pas 😊"
-- Gali pain point mereka dengan empati
+Balas pesan customer berikut:"""
 
-3. VALUE PROPOSITION
-- Jangan jual fitur, jual MANFAAT dan HASIL
-- "Dengan [produk/layanan] ini, kak bisa [hasil konkret yang mereka dapat]"
-- Gunakan social proof kalau ada: "Banyak customer kami yang..."
-
-4. HANDLING OBJECTIONS
-Harga mahal:
-→ "Saya ngerti kak. Tapi kalau dipikir-pikir, dengan [benefit], kak bisa hemat/dapat [nilai] yang jauh lebih besar. Investasi yang worth it banget! 💪"
-
-Masih pikir-pikir:
-→ "Tentu kak, gak harus buru-buru 😊 Boleh saya tanya, hal apa yang masih bikin ragu? Siapa tahu saya bisa bantu kasih info yang tepat"
-
-Banding kompetitor:
-→ "Wah iya ada beberapa pilihan kak. Yang bikin kami beda adalah [keunggulan unik]. Plus [benefit tambahan]. Banyak yang awalnya bandingkan tapi akhirnya pilih kami karena [alasan] 😊"
-
-5. CLOSING TECHNIQUES
-Kalau customer sudah interested:
-→ Pandu langkah selanjutnya dengan JELAS dan MUDAH
-→ "Untuk lanjut, kak tinggal [langkah 1, 2, 3]. Gampang banget! Mau saya bantu prosesnya sekarang? 😊"
-
-Kalau customer hampir closing:
-→ Berikan small push yang natural
-→ "Oh iya kak, kalau order sekarang kak bisa dapat [bonus/keuntungan tambahan] lho! Sayang kalau dilewatin 😊"
-
-6. POST-CLOSING
-Kalau sudah deal:
-→ Apresiasi dengan tulus
-→ Pastikan mereka excited dengan keputusan mereka
-→ "Selamat kak! Keputusan yang tepat banget. Kak pasti gak bakal nyesal 🎉"
-→ Minta referral dengan natural: "Kalau ada teman yang butuh, boleh rekomendasiin kami ya kak 😊"
-
-7. FOLLOW UP YANG TEPAT
-Kalau tidak jadi sekarang:
-→ Tidak pushy, tapi jaga hubungan
-→ "Gak apa-apa kak 😊 Kalau nanti butuh atau ada pertanyaan apapun, kami selalu siap ya! Saya simpan kontaknya boleh?"
-
-ATURAN KETAT:
-- MAKSIMAL 3-4 kalimat per balasan — singkat, padat, powerful
-- JANGAN pernah jawab kaku seperti robot atau template korporat
-- JANGAN spam atau terlalu agresif
-- SELALU akhiri dengan pertanyaan atau call-to-action yang natural
-- Emoji secukupnya — 1-2 per pesan, jangan berlebihan
-- Kalau tidak tahu jawaban → jujur dan tawarkan untuk cari tahu
-
-Balas pesan customer berikut dengan Sales AI terbaik:"""
-
-    return await call_llm(system_prompt, message)
+    try:
+        return await call_llm(system_prompt, message)
+    except Exception as e:
+        print(f"[WA REPLY ERROR] {e}")
+        return "Terima kasih atas pesan Anda! Kami akan segera membalas. 😊"
