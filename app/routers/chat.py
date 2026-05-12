@@ -22,6 +22,7 @@ import os
 import sqlite3
 import base64
 import tempfile
+import datetime
 from typing import Optional
 
 init_db()
@@ -99,7 +100,7 @@ class MarkPaidRequest(BaseModel):
 
 class UpgradePlanRequest(BaseModel):
     user_id: str
-    plan: str  # apex / zenith / free
+    plan: str
 
 
 # ── FCM Helper ─────────────────────────────────────────────
@@ -164,11 +165,9 @@ def _plan_label(plan: str) -> str:
 
 
 def _limit_response(plan_info: dict) -> dict:
-    """Response saat user melebihi limit"""
     plan = plan_info.get("plan", "free")
     daily_commands = plan_info.get("daily_commands", 0)
     daily_limit = plan_info.get("daily_limit", 10)
-    remaining = max(0, daily_limit - daily_commands)
 
     if plan == 'free':
         reply = (
@@ -216,6 +215,62 @@ async def _run_broadcast(phones: list, message: str, user_id: str = "default"):
         print(f"[BROADCAST ERROR] {e}")
 
 
+# ── Health Check ───────────────────────────────────────────
+@router.get("/health")
+async def health_check():
+    """✅ Cek kesehatan semua service Orion AI"""
+    try:
+        from app.services.ai_provider import get_health_status
+        ai_health = get_health_status()
+    except Exception as e:
+        ai_health = {"error": str(e)}
+
+    wa_status = False
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            res = await client.get(f"{WA_GATEWAY_URL}/status")
+            wa_status = res.json().get("connected", False)
+    except:
+        pass
+
+    gmail_status = False
+    try:
+        from app.services.gmail_service import get_gmail_service
+        get_gmail_service()
+        gmail_status = True
+    except:
+        pass
+
+    db_status = False
+    try:
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(DB_PATH)
+        conn.execute("SELECT 1")
+        conn.close()
+        db_status = True
+    except:
+        pass
+
+    overall = (
+        db_status and
+        isinstance(ai_health, dict) and
+        any(v.get("healthy", False) for v in ai_health.values()
+            if isinstance(v, dict))
+    )
+
+    return {
+        "status": "ok",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "services": {
+            "database": "✅ OK" if db_status else "❌ ERROR",
+            "gmail": "✅ OK" if gmail_status else "⚠️ Token expired",
+            "wa_gateway": "✅ Connected" if wa_status else "⚠️ Disconnected",
+        },
+        "ai_providers": ai_health,
+        "overall_healthy": overall,
+    }
+
+
 # ── Endpoints ──────────────────────────────────────────────
 
 @router.post("/save-fcm-token")
@@ -239,7 +294,6 @@ async def save_user_profile_endpoint(request: SaveUserProfileRequest):
             city=request.city,
             briefing_hour=request.briefing_hour
         )
-        # Init trial otomatis saat save profile
         init_user_plan(request.user_id)
         return {"status": "success", "message": f"Profil {request.name} tersimpan"}
     except Exception as e:
@@ -251,11 +305,7 @@ async def get_user_profile_endpoint(user_id: str):
     try:
         profile = get_user_profile(user_id)
         plan_info = get_user_plan(user_id)
-        return {
-            "status": "success",
-            "profile": profile,
-            "plan": plan_info
-        }
+        return {"status": "success", "profile": profile, "plan": plan_info}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -264,13 +314,11 @@ async def get_user_profile_endpoint(user_id: str):
 
 @router.get("/plan/{user_id}")
 async def get_plan(user_id: str):
-    """Ambil info plan user — trial/free/apex/zenith"""
     try:
         init_user_plan(user_id)
         plan_info = get_user_plan(user_id)
         plan = plan_info.get("plan", "free")
 
-        # Info fitur per plan
         features = {
             'trial': [
                 "✅ Semua fitur Apex & Zenith",
@@ -299,7 +347,6 @@ async def get_plan(user_id: str):
                 "👑 Multi-user (2 akun)",
                 "👑 White label",
                 "👑 Priority support 24/7",
-                "👑 Fitur eksklusif perusahaan besar",
             ],
             'free': [
                 f"⚡ {plan_info.get('daily_commands', 0)}/{plan_info.get('daily_limit', 10)} perintah hari ini",
@@ -322,10 +369,9 @@ async def get_plan(user_id: str):
 
 @router.post("/plan/upgrade")
 async def upgrade_plan(request: UpgradePlanRequest):
-    """Upgrade plan user ke apex/zenith"""
     try:
         if request.plan not in ['apex', 'zenith', 'free']:
-            return {"status": "error", "message": "Plan tidak valid. Pilih: apex/zenith/free"}
+            return {"status": "error", "message": "Plan tidak valid"}
         upgrade_user_plan(request.user_id, request.plan)
         plan_info = get_user_plan(request.user_id)
         return {
@@ -341,26 +387,16 @@ async def upgrade_plan(request: UpgradePlanRequest):
 
 @router.post("/")
 async def chat(request: CommandRequest):
-    """Main command endpoint dengan plan limit check"""
     try:
-        # Skip limit check untuk user default (sistem internal)
         if request.user_id and request.user_id != "default":
-            # Init trial kalau belum ada
             init_user_plan(request.user_id)
-
-            # Cek plan dan limit
             plan_info = get_user_plan(request.user_id)
-
             if not plan_info.get("can_use", True):
                 return _limit_response(plan_info)
-
-            # Increment counter
             increment_daily_commands(request.user_id)
 
-        # Proses perintah
         result = await process_command(request.message, request.user_id)
 
-        # Tambah info plan ke response
         if request.user_id and request.user_id != "default":
             try:
                 plan_info = get_user_plan(request.user_id)
@@ -399,61 +435,98 @@ async def chat(request: CommandRequest):
 
 @router.get("/emails")
 async def read_emails():
-    emails = get_recent_emails()
-    return {"status": "success", "emails": emails}
+    try:
+        emails = get_recent_emails()
+        return {"status": "success", "emails": emails}
+    except Exception as e:
+        print(f"[EMAILS ERROR] {e}")
+        return {"status": "error", "emails": [], "message": str(e)}
 
 
 @router.post("/send-email")
 async def send_email_endpoint(request: SendEmailRequest):
-    result = send_email(request.to, request.subject, request.body)
-    return result
+    try:
+        result = send_email(request.to, request.subject, request.body)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/send-whatsapp")
 async def send_whatsapp_endpoint(request: SendWhatsAppRequest):
-    result = send_whatsapp(request.phone, request.message)
-    return result
+    try:
+        result = send_whatsapp(request.phone, request.message)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("/whatsapp-messages")
 async def get_whatsapp_messages(user_id: str = "default"):
-    messages = get_wa_messages(limit=10, user_id=user_id)
-    return {"status": "success", "messages": messages}
+    try:
+        messages = get_wa_messages(limit=10, user_id=user_id)
+        return {"status": "success", "messages": messages}
+    except Exception as e:
+        return {"status": "error", "messages": [], "message": str(e)}
 
 
 @router.get("/briefing")
 async def get_briefing(user_id: str = "default"):
-    result = await generate_briefing()
     try:
-        if result and result.get("urgent") and len(result["urgent"]) > 0:
-            urgent_count = len(result["urgent"])
-            await send_fcm_notification(
-                title="📧 Email Urgent!",
-                body=f"Ada {urgent_count} email urgent yang perlu dibalas",
-                data={"type": "email"},
-                user_id=user_id
-            )
+        result = await generate_briefing()
+        try:
+            if result and result.get("urgent") and len(result["urgent"]) > 0:
+                await send_fcm_notification(
+                    title="📧 Email Urgent!",
+                    body=f"Ada {len(result['urgent'])} email urgent",
+                    data={"type": "email"},
+                    user_id=user_id
+                )
+        except Exception as fcm_err:
+            print(f"[FCM BRIEFING ERROR] {fcm_err}")
+        return {"status": "success", "briefing": result}
     except Exception as e:
-        print(f"[FCM BRIEFING ERROR] {e}")
-    return {"status": "success", "briefing": result}
+        print(f"[BRIEFING ERROR] {e}")
+        # Graceful fallback — tidak crash app
+        return {
+            "status": "success",
+            "briefing": {
+                "urgent": [],
+                "bisa_nanti": [],
+                "arsip": [],
+                "summary": "Email tidak dapat dimuat saat ini. Coba lagi nanti."
+            }
+        }
 
 
 @router.get("/tasks")
 async def get_tasks(user_id: str = "default"):
-    result = await extract_tasks()
     try:
-        if result and result.get("tasks") and len(result["tasks"]) > 0:
-            high_priority = [t for t in result["tasks"] if t.get("priority") == "high"]
-            if high_priority:
-                await send_fcm_notification(
-                    title="✅ Task Urgent!",
-                    body=f"Ada {len(high_priority)} task prioritas tinggi",
-                    data={"type": "task"},
-                    user_id=user_id
-                )
+        result = await extract_tasks()
+        try:
+            if result and result.get("tasks"):
+                high_priority = [t for t in result["tasks"]
+                                 if t.get("priority") == "high"]
+                if high_priority:
+                    await send_fcm_notification(
+                        title="✅ Task Urgent!",
+                        body=f"Ada {len(high_priority)} task prioritas tinggi",
+                        data={"type": "task"},
+                        user_id=user_id
+                    )
+        except Exception as fcm_err:
+            print(f"[FCM TASKS ERROR] {fcm_err}")
+        return {"status": "success", "tasks": result}
     except Exception as e:
-        print(f"[FCM TASKS ERROR] {e}")
-    return {"status": "success", "tasks": result}
+        print(f"[TASKS ERROR] {e}")
+        # Graceful fallback — tidak crash app
+        return {
+            "status": "success",
+            "tasks": {
+                "tasks": [],
+                "summary": "Tasks tidak dapat dimuat saat ini. Coba lagi nanti."
+            }
+        }
 
 
 @router.get("/calendar-events")
@@ -462,14 +535,18 @@ async def get_calendar_events():
         events = get_upcoming_events(max_results=10)
         return {"status": "success", "events": events}
     except Exception as e:
-        return {"status": "error", "events": [], "message": str(e)}
+        print(f"[CALENDAR ERROR] {e}")
+        return {"status": "success", "events": [], "message": str(e)}
 
 
 @router.get("/customer-memory/{phone}")
 async def get_memory(phone: str):
-    context = build_customer_context(phone)
-    memory = get_customer_memory(phone)
-    return {"status": "success", "context": context, "memory": memory}
+    try:
+        context = build_customer_context(phone)
+        memory = get_customer_memory(phone)
+        return {"status": "success", "context": context, "memory": memory}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.post("/update-memory")
@@ -492,8 +569,11 @@ async def get_customers():
 
 @router.post("/wa-reply")
 async def wa_reply(request: WAReplyRequest):
-    result = await generate_wa_reply(request.message, request.business_context)
-    return {"status": "success", "reply": result}
+    try:
+        result = await generate_wa_reply(request.message, request.business_context)
+        return {"status": "success", "reply": result}
+    except Exception as e:
+        return {"status": "success", "reply": "Terima kasih atas pesan Anda. Kami akan segera membalas."}
 
 
 @router.get("/wa-qr")
@@ -534,14 +614,12 @@ async def save_profile(request: SaveProfileRequest):
 @router.post("/broadcast")
 async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks):
     try:
-        # Cek plan untuk broadcast
         if request.user_id and request.user_id != "default":
             plan_info = get_user_plan(request.user_id)
-            plan = plan_info.get("plan", "free")
-            if plan == "free":
+            if plan_info.get("plan") == "free":
                 return {
                     "status": "error",
-                    "message": "⚠️ Broadcast hanya tersedia untuk plan Apex dan Zenith.\n\nUpgrade sekarang mulai Rp 120.000/bulan!"
+                    "message": "⚠️ Broadcast hanya tersedia untuk plan Apex dan Zenith."
                 }
 
         customers = get_all_customers()
@@ -583,9 +661,11 @@ async def mark_invoice_paid_endpoint(request: MarkPaidRequest):
         from app.services.payment_service import mark_invoice_paid
         success = mark_invoice_paid(request.invoice_number, request.user_id)
         if success:
-            return {"status": "success", "message": f"Invoice {request.invoice_number} ditandai lunas"}
+            return {"status": "success",
+                    "message": f"Invoice {request.invoice_number} ditandai lunas"}
         else:
-            return {"status": "error", "message": f"Invoice {request.invoice_number} tidak ditemukan"}
+            return {"status": "error",
+                    "message": f"Invoice {request.invoice_number} tidak ditemukan"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -670,14 +750,12 @@ async def transcribe_meeting(
     user_id: str = Form(default="default"),
 ):
     try:
-        # Cek plan untuk meeting transcriber
         if user_id and user_id != "default":
             plan_info = get_user_plan(user_id)
-            plan = plan_info.get("plan", "free")
-            if plan == "free":
+            if plan_info.get("plan") == "free":
                 return {
                     "status": "error",
-                    "message": "⚠️ Meeting Transcriber hanya tersedia untuk plan Apex dan Zenith."
+                    "message": "⚠️ Meeting Transcriber hanya tersedia untuk Apex dan Zenith."
                 }
 
         filename = audio.filename or "audio.mp3"
@@ -727,7 +805,7 @@ async def _process_meeting_background(
         if result["status"] == "success":
             await send_fcm_notification(
                 title="🎙️ Meeting Selesai Diproses!",
-                body=f"Notulen '{meeting_title}' siap. Terkirim ke {result['emails_sent']} peserta.",
+                body=f"Notulen '{meeting_title}' siap.",
                 data={"type": "meeting", "summary": result["summary"][:200]},
                 user_id=user_id
             )
@@ -756,50 +834,60 @@ async def _process_meeting_background(
 
 @router.post("/whatsapp-webhook")
 async def whatsapp_webhook(request: Request):
-    data = await request.json()
-    incoming = receive_whatsapp_message(data)
-
-    if not incoming["message"] or not incoming["phone"]:
-        return {"status": "ok"}
-
-    phone = incoming["phone"]
-    message = incoming["message"]
-
-    customer_context = build_customer_context(phone)
-    ai_result = await generate_wa_reply(message, customer_context)
-
-    reply_text = ""
     try:
+        data = await request.json()
+        incoming = receive_whatsapp_message(data)
+
+        if not incoming.get("message") or not incoming.get("phone"):
+            return {"status": "ok"}
+
+        phone = incoming["phone"]
+        message = incoming["message"]
+
+        customer_context = build_customer_context(phone)
+
+        try:
+            ai_result = await generate_wa_reply(message, customer_context)
+        except Exception as ai_err:
+            print(f"[WA REPLY AI ERROR] {ai_err}")
+            ai_result = "Terima kasih atas pesan Anda. Kami akan segera membalas."
+
+        reply_text = ""
         if isinstance(ai_result, dict):
             reply_text = (
-                ai_result.get("reply")
-                or ai_result.get("draft")
-                or ai_result.get("summary")
-                or "Terima kasih atas pesan Anda."
+                ai_result.get("reply") or
+                ai_result.get("draft") or
+                ai_result.get("summary") or
+                "Terima kasih atas pesan Anda."
             )
         elif isinstance(ai_result, str):
             reply_text = ai_result
         else:
             reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
-    except Exception:
-        reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
 
-    send_whatsapp(phone, reply_text)
-    mark_replied(phone)
+        try:
+            send_whatsapp(phone, reply_text)
+            mark_replied(phone)
+        except Exception as send_err:
+            print(f"[WA SEND ERROR] {send_err}")
 
-    try:
-        update_customer_memory(phone, message, reply_text)
+        try:
+            update_customer_memory(phone, message, reply_text)
+        except Exception as mem_err:
+            print(f"[MEMORY ERROR] {mem_err}")
+
+        try:
+            sender = phone.replace("@lid", "").replace("@s.whatsapp.net", "")
+            await send_fcm_to_all_users(
+                title=f"💬 WA dari {sender}",
+                body=message[:100],
+                data={"type": "wa", "phone": phone}
+            )
+        except Exception as fcm_err:
+            print(f"[FCM WA ERROR] {fcm_err}")
+
+        return {"status": "ok"}
+
     except Exception as e:
-        print(f"[MEMORY ERROR] {phone}: {e}")
-
-    try:
-        sender = phone.replace("@lid", "").replace("@s.whatsapp.net", "")
-        await send_fcm_to_all_users(
-            title=f"💬 WA dari {sender}",
-            body=message[:100],
-            data={"type": "wa", "phone": phone}
-        )
-    except Exception as e:
-        print(f"[FCM WA ERROR] {e}")
-
-    return {"status": "ok"}
+        print(f"[WEBHOOK ERROR] {e}")
+        return {"status": "ok"}  # Selalu return ok agar WA tidak retry
