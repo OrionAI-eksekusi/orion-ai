@@ -24,8 +24,8 @@ _circuit = {
     "groq":    {"failures": 0, "last_failure": 0, "open": False},
     "gemini":  {"failures": 0, "last_failure": 0, "open": False},
 }
-_FAILURE_THRESHOLD = 3      # berapa kali gagal sebelum circuit open
-_RECOVERY_TIMEOUT  = 60     # detik sebelum circuit dicoba lagi
+_FAILURE_THRESHOLD = 5      # berapa kali gagal sebelum circuit open
+_RECOVERY_TIMEOUT  = 30     # detik sebelum circuit dicoba lagi
 
 # ── Request Stats ─────────────────────────────────────────
 _stats = defaultdict(lambda: {"success": 0, "failure": 0, "latency_ms": []})
