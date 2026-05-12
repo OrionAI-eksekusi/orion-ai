@@ -96,3 +96,23 @@ async def resolve_alert_endpoint(request: ResolveAlertRequest):
         return {"status": "success", "message": "Alert resolved"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@router.delete("/reset/{user_id}")
+async def reset_zenith_data(user_id: str):
+    """Reset semua data Zenith user"""
+    try:
+        from app.services.zenith_service import init_zenith_db
+        import sqlite3
+        import os
+        DB_PATH = os.getenv("DB_PATH", "orion.db")
+        init_zenith_db()
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("DELETE FROM vendor_transactions WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM vendor_profiles WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM risk_alerts WHERE user_id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": f"Data Zenith {user_id} direset"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
