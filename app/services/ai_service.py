@@ -1300,3 +1300,39 @@ Respond HANYA dengan JSON."""
     except Exception as e:
         print(f"[WA EXTRACT ERROR] {e}")
         return {"status": "error", "message": str(e), "extracted": 0}
+
+
+async def auto_extract_transactions_from_wa(user_id: str = "default") -> dict:
+    try:
+        from app.services.database_service import get_wa_messages
+        import json, re
+        messages = get_wa_messages(limit=20, user_id=user_id)
+        if not messages:
+            return {"status": "no_messages", "extracted": 0}
+        keywords = ['harga', 'price', 'invoice', 'penawaran', 'order', 'beli', 'rp', 'rupiah', 'juta', 'ribu']
+        tx_messages = [m for m in messages if any(kw in m.get('message','').lower() for kw in keywords)]
+        if not tx_messages:
+            return {"status": "no_transactions", "extracted": 0}
+        system_prompt = """Ekstrak transaksi dari WA. HANYA kalau ada harga spesifik.
+Jawab JSON: [{"vendor_name":"...","item_description":"...","unit_price":0,"quantity":1,"total_amount":0,"category":"general","source_wa":"..."}]
+Jika tidak ada: []"""
+        wa_content = "\n---\n".join([f"From: {m.get('phone','')}\nMsg: {m.get('message','')[:300]}" for m in tx_messages[:10]])
+        response = await call_llm(system_prompt, wa_content)
+        clean = response.replace('```json','').replace('```','').strip()
+        match = re.search(r'\[.*\]', clean, re.DOTALL)
+        transactions = json.loads(match.group()) if match else []
+        extracted_count = 0
+        results = []
+        for tx in transactions:
+            if tx.get('vendor_name') and tx.get('unit_price', 0) > 0:
+                from app.services.zenith_service import analyze_price_guard
+                result = await analyze_price_guard(user_id=user_id, vendor_name=tx['vendor_name'],
+                    item_description=tx.get('item_description','Unknown'),
+                    unit_price=float(tx.get('unit_price',0)), quantity=float(tx.get('quantity',1)),
+                    category=tx.get('category','general'))
+                results.append({"vendor": tx['vendor_name'], "item": tx['item_description'],
+                    "risk_level": result.get('risk_level','UNKNOWN'), "risk_score": result.get('risk_score',0)})
+                extracted_count += 1
+        return {"status": "success", "extracted": extracted_count, "results": results}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "extracted": 0}

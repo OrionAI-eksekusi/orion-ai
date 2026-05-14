@@ -359,3 +359,15 @@ async def auto_extract_wa(request: Request):
         return {"status": "success", "data": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/auto-extract-wa")
+async def auto_extract_wa(request: Request):
+    try:
+        body = await request.json()
+        user_id = body.get("user_id", "default")
+        from app.services.ai_service import auto_extract_transactions_from_wa
+        result = await auto_extract_transactions_from_wa(user_id)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
