@@ -20,14 +20,10 @@ SCOPES = [
     'https://www.googleapis.com/auth/contacts.readonly',
 ]
 
-# ── Cache credentials di memory ───────────────────────────
 _cached_creds = None
 
 
-# ── Token Management ──────────────────────────────────────
-
 def _build_creds_from_env() -> Credentials:
-    """Build credentials dari env var GMAIL_TOKEN_JSON"""
     token_json = os.getenv("GMAIL_TOKEN_JSON")
     if not token_json:
         raise ValueError("GMAIL_TOKEN_JSON tidak ada di env var")
@@ -43,7 +39,6 @@ def _build_creds_from_env() -> Credentials:
 
 
 def _save_token_to_db(creds: Credentials):
-    """Simpan token yang sudah di-refresh ke DB — persistent"""
     try:
         DB_PATH = os.getenv("DB_PATH", "orion.db")
         token_data = {
@@ -78,7 +73,6 @@ def _save_token_to_db(creds: Credentials):
 
 
 def _load_token_from_db() -> Credentials:
-    """Load token terbaru dari DB"""
     try:
         DB_PATH = os.getenv("DB_PATH", "orion.db")
         conn = sqlite3.connect(DB_PATH)
@@ -103,21 +97,12 @@ def _load_token_from_db() -> Credentials:
 
 
 def _get_valid_creds() -> Credentials:
-    """Ambil credentials yang valid — dengan auto refresh"""
     global _cached_creds
-
-    # 1. Pakai cache memory kalau masih valid
     if _cached_creds and not _cached_creds.expired:
         return _cached_creds
-
-    # 2. Load dari DB (token yang sudah pernah di-refresh)
     creds = _load_token_from_db()
-
-    # 3. Fallback ke env var
     if not creds:
         creds = _build_creds_from_env()
-
-    # 4. Auto refresh kalau expired
     if creds and creds.expired and creds.refresh_token:
         print("[GMAIL] 🔄 Token expired — auto refresh...")
         try:
@@ -126,15 +111,37 @@ def _get_valid_creds() -> Credentials:
             _save_token_to_db(creds)
         except Exception as e:
             print(f"[GMAIL] ❌ Gagal refresh token: {e}")
-            # Coba dari env var lagi
             creds = _build_creds_from_env()
             if creds and creds.expired:
                 creds.refresh(Request())
                 _save_token_to_db(creds)
-
-    # 5. Simpan ke cache memory
     _cached_creds = creds
     return creds
+
+
+def _get_user_creds(user_id: str) -> Credentials:
+    """Ambil credentials untuk user tertentu — multi-user support"""
+    try:
+        from app.services.database_service import get_user_gmail_token
+        user_token = get_user_gmail_token(user_id)
+        if user_token and user_token.get('access_token'):
+            # Ambil client_id dan client_secret dari env
+            base_token = json.loads(os.getenv("GMAIL_TOKEN_JSON", "{}"))
+            creds = Credentials(
+                token=user_token['access_token'],
+                refresh_token=base_token.get('refresh_token', ''),
+                token_uri='https://oauth2.googleapis.com/token',
+                client_id=base_token.get('client_id', ''),
+                client_secret=base_token.get('client_secret', ''),
+                scopes=SCOPES
+            )
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            return creds
+    except Exception as e:
+        print(f"[GMAIL] Error get user creds: {e}")
+    # Fallback ke default
+    return _get_valid_creds()
 
 
 # ── Service Builders ──────────────────────────────────────
@@ -148,6 +155,16 @@ def get_gmail_service():
         global _cached_creds
         _cached_creds = None
         raise e
+
+
+def get_gmail_service_for_user(user_id: str):
+    """Gmail service untuk user tertentu — multi-user"""
+    try:
+        creds = _get_user_creds(user_id)
+        return build('gmail', 'v1', credentials=creds)
+    except Exception as e:
+        print(f"[GMAIL USER SERVICE ERROR] {e}")
+        return get_gmail_service()
 
 
 def get_drive_service():
@@ -170,9 +187,13 @@ def get_contacts_service():
 
 # ── Gmail Functions ───────────────────────────────────────
 
-def get_recent_emails(max_results=5):
+def get_recent_emails(max_results=5, user_id: str = None):
+    """Ambil email — kalau ada user_id pakai token user, kalau tidak pakai default"""
     try:
-        service = get_gmail_service()
+        if user_id:
+            service = get_gmail_service_for_user(user_id)
+        else:
+            service = get_gmail_service()
         results = service.users().messages().list(
             userId='me', maxResults=max_results, labelIds=['INBOX']
         ).execute()
@@ -211,9 +232,12 @@ def get_recent_emails(max_results=5):
         return []
 
 
-def send_email(to: str, subject: str, body: str):
+def send_email(to: str, subject: str, body: str, user_id: str = None):
     try:
-        service = get_gmail_service()
+        if user_id:
+            service = get_gmail_service_for_user(user_id)
+        else:
+            service = get_gmail_service()
         message = MIMEText(body)
         message['to'] = to
         message['subject'] = subject
@@ -228,15 +252,17 @@ def send_email(to: str, subject: str, body: str):
 
 
 def send_email_with_attachment(to: str, subject: str, body: str,
-                                file_path: str, filename: str):
-    """Kirim email dengan attachment file"""
+                                file_path: str, filename: str,
+                                user_id: str = None):
     try:
-        service = get_gmail_service()
+        if user_id:
+            service = get_gmail_service_for_user(user_id)
+        else:
+            service = get_gmail_service()
         message = MIMEMultipart()
         message['to'] = to
         message['subject'] = subject
         message.attach(MIMEText(body, 'plain'))
-
         with open(file_path, 'rb') as f:
             part = MIMEBase('application', 'octet-stream')
             part.set_payload(f.read())
@@ -244,13 +270,11 @@ def send_email_with_attachment(to: str, subject: str, body: str,
             part.add_header('Content-Disposition',
                            f'attachment; filename="{filename}"')
             message.attach(part)
-
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
         service.users().messages().send(
             userId='me', body={'raw': raw}
         ).execute()
-        return {"status": "sent", "to": to, "subject": subject,
-                "attachment": filename}
+        return {"status": "sent", "to": to, "subject": subject, "attachment": filename}
     except Exception as e:
         print(f"[SEND EMAIL ATTACHMENT ERROR] {e}")
         return {"status": "error", "message": str(e)}
@@ -259,7 +283,6 @@ def send_email_with_attachment(to: str, subject: str, body: str,
 # ── Drive Functions ───────────────────────────────────────
 
 def search_drive_files(query: str, max_results: int = 5) -> list:
-    """Cari file di Google Drive"""
     try:
         service = get_drive_service()
         results = service.files().list(
@@ -274,16 +297,12 @@ def search_drive_files(query: str, max_results: int = 5) -> list:
 
 
 def download_drive_file(file_id: str, filename: str) -> str:
-    """Download file dari Google Drive ke /tmp"""
     try:
         import io
         from googleapiclient.http import MediaIoBaseDownload
-
         service = get_drive_service()
-        file_meta = service.files().get(
-            fileId=file_id, fields='mimeType,name').execute()
+        file_meta = service.files().get(fileId=file_id, fields='mimeType,name').execute()
         mime_type = file_meta.get('mimeType', '')
-
         export_types = {
             'application/vnd.google-apps.spreadsheet': (
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'),
@@ -292,37 +311,26 @@ def download_drive_file(file_id: str, filename: str) -> str:
             'application/vnd.google-apps.presentation': (
                 'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'),
         }
-
         safe_filename = filename.replace('/', '_').replace(' ', '_')
         tmp_path = f"/tmp/{safe_filename}"
-
         if mime_type in export_types:
             export_mime, ext = export_types[mime_type]
             if not safe_filename.endswith(ext):
                 tmp_path = f"/tmp/{safe_filename}{ext}"
-            request = service.files().export_media(
-                fileId=file_id, mimeType=export_mime)
+            request = service.files().export_media(fileId=file_id, mimeType=export_mime)
         else:
             request = service.files().get_media(fileId=file_id)
-
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
         done = False
         while not done:
             status, done = downloader.next_chunk()
-
         with open(tmp_path, 'wb') as f:
             f.write(fh.getvalue())
-
         file_size = os.path.getsize(tmp_path)
-        print(f"[DRIVE] Downloaded: {tmp_path} ({file_size} bytes)")
-
         if file_size == 0:
-            print(f"[DRIVE] File kosong!")
             return ""
-
         return tmp_path
-
     except Exception as e:
         print(f"[DRIVE DOWNLOAD ERROR] {e}")
         return ""
@@ -331,16 +339,13 @@ def download_drive_file(file_id: str, filename: str) -> str:
 # ── Contacts Functions ────────────────────────────────────
 
 def search_contact_email(name: str) -> str:
-    """Cari email kontak berdasarkan nama"""
     try:
         import re
         service = get_gmail_service()
         results = service.users().messages().list(
-            userId='me',
-            maxResults=50,
+            userId='me', maxResults=50,
             q=f"to:{name} OR from:{name}"
         ).execute()
-
         messages = results.get('messages', [])
         for msg in messages:
             detail = service.users().messages().get(
@@ -349,10 +354,8 @@ def search_contact_email(name: str) -> str:
             ).execute()
             headers = detail['payload']['headers']
             for h in headers:
-                if h['name'] in ['To', 'From'] and \
-                        name.lower() in h['value'].lower():
-                    match = re.search(
-                        r'[\w.+-]+@[\w-]+\.[a-zA-Z]+', h['value'])
+                if h['name'] in ['To', 'From'] and name.lower() in h['value'].lower():
+                    match = re.search(r'[\w.+-]+@[\w-]+\.[a-zA-Z]+', h['value'])
                     if match:
                         return match.group(0)
         return ""
