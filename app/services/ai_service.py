@@ -889,10 +889,10 @@ Format JSON:
         }
 
 
-async def generate_briefing():
+async def generate_briefing(user_id: str = 'default'):
     try:
         from app.services.gmail_service import get_recent_emails
-        all_emails = get_recent_emails(max_results=10)
+        all_emails = get_recent_emails(max_results=10, user_id=user_id)
         emails = [e for e in all_emails if
             'azvickyfadzry02@gmail.com' not in e.get('from', '') and
             'noreply' not in e.get('from', '').lower() and
@@ -933,7 +933,7 @@ Jawab HANYA dengan JSON murni tanpa backtick:
 async def extract_tasks():
     try:
         from app.services.gmail_service import get_recent_emails
-        all_emails = get_recent_emails(max_results=10)
+        all_emails = get_recent_emails(max_results=10, user_id=user_id)
         emails = [e for e in all_emails if
             'azvickyfadzry02@gmail.com' not in e.get('from', '') and
             'noreply' not in e.get('from', '').lower() and

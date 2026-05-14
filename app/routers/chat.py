@@ -482,7 +482,7 @@ async def get_whatsapp_messages(user_id: str = "default"):
 @router.get("/briefing")
 async def get_briefing(user_id: str = "default"):
     try:
-        result = await generate_briefing()
+        result = await generate_briefing(user_id=user_id)
         try:
             if result and result.get("urgent") and len(result["urgent"]) > 0:
                 await send_fcm_notification(
