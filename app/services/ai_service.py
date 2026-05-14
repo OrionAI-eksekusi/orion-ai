@@ -1075,9 +1075,16 @@ Respond HANYA dengan JSON."""
             for e in invoice_emails[:5]
         ])
         response = await call_llm(system_prompt, email_content)
-        import json
+        import json, re
         clean = response.replace('```json','').replace('```','').strip()
-        transactions = json.loads(clean)
+        # Cari array JSON dalam response
+        match = re.search(r'\[.*\]', clean, re.DOTALL)
+        if match:
+            clean = match.group()
+        try:
+            transactions = json.loads(clean)
+        except:
+            transactions = []
         if not transactions:
             return {"status": "no_transactions_found", "extracted": 0}
         extracted_count = 0
