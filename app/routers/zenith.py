@@ -234,3 +234,115 @@ async def auto_extract_gmail(request: Request):
         return {"status": "success", "data": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/ocr-vision")
+async def ocr_vision(request: Request):
+    """OCR Invoice pakai Claude Vision — foto langsung dianalisa"""
+    try:
+        body = await request.json()
+        user_id = body.get("user_id", "default")
+        image_base64 = body.get("image_base64", "")
+        if not image_base64:
+            return {"status": "error", "message": "Image tidak ada"}
+
+        import httpx, os, json
+        CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
+        CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
+
+        headers = {
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+
+        payload = {
+            "model": CLAUDE_MODEL,
+            "max_tokens": 2048,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": image_base64
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": """Kamu adalah forensic document examiner untuk Zenith AI.
+
+Analisa invoice/dokumen ini dan jawab dalam JSON:
+{
+    "extracted_text": "semua teks yang ada di dokumen",
+    "forensic_status": "CLEAN/SUSPICIOUS/TAMPERED",
+    "risk_score": 0-100,
+    "flags": [
+        {
+            "flag_type": "jenis flag",
+            "severity": "HIGH/MEDIUM/LOW",
+            "description": "deskripsi temuan",
+            "evidence": "bukti spesifik"
+        }
+    ],
+    "transaction_data": {
+        "vendor_name": "nama vendor jika ada",
+        "item_description": "deskripsi item",
+        "unit_price": 0,
+        "quantity": 1,
+        "total_amount": 0,
+        "invoice_number": "nomor invoice"
+    },
+    "summary": "ringkasan forensik 2-3 kalimat",
+    "recommended_actions": ["tindakan yang direkomendasikan"]
+}
+
+Cek:
+1. Inkonsistensi format angka
+2. Total tidak cocok dengan perhitungan
+3. Tanggal tidak wajar
+4. Font berbeda dalam dokumen
+5. Field yang mencurigakan
+
+Respond HANYA dengan JSON."""
+                    }
+                ]
+            }]
+        }
+
+        async with httpx.AsyncClient(timeout=45) as client:
+            res = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=headers,
+                json=payload
+            )
+            data = res.json()
+            text = data["content"][0]["text"]
+            clean = text.replace('```json', '').replace('```', '').strip()
+            result = json.loads(clean)
+
+            # Auto analisa forensik lebih dalam
+            from app.services.zenith_service import ocr_invoice_forensic
+            deep = await ocr_invoice_forensic(user_id, result.get("extracted_text", ""), {})
+            result["deep_forensic"] = deep
+
+            # Auto tambah ke Price Guard kalau ada data transaksi
+            tx = result.get("transaction_data", {})
+            if tx.get("vendor_name") and tx.get("unit_price", 0) > 0:
+                from app.services.zenith_service import analyze_price_guard
+                price_result = await analyze_price_guard(
+                    user_id=user_id,
+                    vendor_name=tx["vendor_name"],
+                    item_description=tx.get("item_description", ""),
+                    unit_price=float(tx.get("unit_price", 0)),
+                    quantity=float(tx.get("quantity", 1)),
+                    total_amount=float(tx.get("total_amount", 0)),
+                )
+                result["price_guard"] = price_result
+
+            return {"status": "success", "forensic": result}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
