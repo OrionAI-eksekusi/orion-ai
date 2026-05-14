@@ -1050,3 +1050,62 @@ Balas pesan customer berikut:"""
     except Exception as e:
         print(f"[WA REPLY ERROR] {e}")
         return "Terima kasih atas pesan Anda! Kami akan segera membalas. 😊"
+
+async def auto_extract_invoices_from_gmail(user_id: str = "default") -> dict:
+    try:
+        from app.services.gmail_service import get_recent_emails
+        emails = get_recent_emails(max_results=20, user_id=user_id)
+        if not emails:
+            return {"status": "no_emails", "extracted": 0}
+        invoice_keywords = ['invoice', 'faktur', 'purchase order', 'po number',
+            'quotation', 'penawaran', 'tagihan', 'payment', 'pembayaran', 'harga', 'price']
+        invoice_emails = []
+        for email in emails:
+            combined = f"{email.get('subject','')} {email.get('body','')} {email.get('snippet','')}".lower()
+            if any(kw in combined for kw in invoice_keywords):
+                invoice_emails.append(email)
+        if not invoice_emails:
+            return {"status": "no_invoices", "extracted": 0}
+        system_prompt = """Ekstrak data transaksi dari email. Jawab JSON array:
+[{"vendor_name":"...","item_description":"...","unit_price":0,"quantity":1,"total_amount":0,"invoice_number":"","category":"general","source_email":""}]
+Jika tidak ada transaksi: []
+Respond HANYA dengan JSON."""
+        email_content = "\n---\n".join([
+            f"From: {e['from']}\nSubject: {e['subject']}\nContent: {e['body'][:500]}"
+            for e in invoice_emails[:5]
+        ])
+        response = await call_llm(system_prompt, email_content)
+        import json
+        clean = response.replace('```json','').replace('```','').strip()
+        transactions = json.loads(clean)
+        if not transactions:
+            return {"status": "no_transactions_found", "extracted": 0}
+        extracted_count = 0
+        results = []
+        for tx in transactions:
+            try:
+                if tx.get('vendor_name') and tx.get('unit_price', 0) > 0:
+                    from app.services.zenith_service import analyze_price_guard
+                    result = await analyze_price_guard(
+                        user_id=user_id,
+                        vendor_name=tx['vendor_name'],
+                        item_description=tx.get('item_description', 'Unknown'),
+                        unit_price=float(tx.get('unit_price', 0)),
+                        quantity=float(tx.get('quantity', 1)),
+                        category=tx.get('category', 'general'),
+                        invoice_number=tx.get('invoice_number', ''),
+                    )
+                    results.append({
+                        "vendor": tx['vendor_name'],
+                        "item": tx['item_description'],
+                        "risk_level": result.get('risk_level', 'UNKNOWN'),
+                        "risk_score": result.get('risk_score', 0),
+                        "source": tx.get('source_email', '')
+                    })
+                    extracted_count += 1
+            except Exception as e:
+                print(f"[AUTO EXTRACT] Error: {e}")
+        return {"status": "success", "extracted": extracted_count, "results": results}
+    except Exception as e:
+        print(f"[AUTO EXTRACT ERROR] {e}")
+        return {"status": "error", "message": str(e), "extracted": 0}

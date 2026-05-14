@@ -222,3 +222,15 @@ async def reset_zenith_data(user_id: str):
         return {"status": "success", "message": f"Data Zenith {user_id} berhasil direset"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@router.post("/auto-extract-gmail")
+async def auto_extract_gmail(request: Request):
+    """Auto extract invoice dari Gmail ke Zenith Price Guard"""
+    try:
+        body = await request.json()
+        user_id = body.get("user_id", "default")
+        from app.services.ai_service import auto_extract_invoices_from_gmail
+        result = await auto_extract_invoices_from_gmail(user_id)
+        return {"status": "success", "data": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
