@@ -86,6 +86,8 @@ class SaveUserProfileRequest(BaseModel):
     phone: str
     city: str = "Jakarta"
     briefing_hour: int = 6
+    gmail_access_token: str = ""
+    gmail_id_token: str = "" 
 
 class SaveBrainRequest(BaseModel):
     user_id: str = "default"
@@ -294,6 +296,13 @@ async def save_user_profile_endpoint(request: SaveUserProfileRequest):
             city=request.city,
             briefing_hour=request.briefing_hour
         )
+        if request.gmail_access_token:
+            from app.services.database_service import save_user_gmail_token
+            save_user_gmail_token(
+                user_id=request.user_id,
+                access_token=request.gmail_access_token,
+                id_token=request.gmail_id_token
+            )
         init_user_plan(request.user_id)
         return {"status": "success", "message": f"Profil {request.name} tersimpan"}
     except Exception as e:

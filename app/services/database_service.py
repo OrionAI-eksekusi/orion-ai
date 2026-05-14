@@ -656,3 +656,49 @@ def get_fcm_token_db(user_id: str = 'default') -> str:
         return row[0] if row else ""
     except:
         return ""
+
+def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
+    """Simpan Gmail OAuth token per user"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_gmail_tokens (
+                user_id TEXT PRIMARY KEY,
+                access_token TEXT NOT NULL,
+                id_token TEXT DEFAULT '',
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+        ''')
+        c.execute('''
+            INSERT INTO user_gmail_tokens (user_id, access_token, id_token, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                access_token = excluded.access_token,
+                id_token = excluded.id_token,
+                updated_at = excluded.updated_at
+        ''', (user_id, access_token, id_token))
+        conn.commit()
+        conn.close()
+        print(f"[DB] Gmail token saved untuk {user_id}")
+    except Exception as e:
+        print(f"[DB] Save gmail token error: {e}")
+
+
+def get_user_gmail_token(user_id: str) -> dict:
+    """Ambil Gmail token user"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            SELECT access_token, id_token, updated_at
+            FROM user_gmail_tokens WHERE user_id = ?
+        ''', (user_id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return {"access_token": row[0], "id_token": row[1], "updated_at": row[2]}
+        return {}
+    except Exception as e:
+        print(f"[DB] Get gmail token error: {e}")
+        return {}
