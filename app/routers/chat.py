@@ -511,7 +511,7 @@ async def get_briefing(user_id: str = "default"):
 @router.get("/tasks")
 async def get_tasks(user_id: str = "default"):
     try:
-        result = await extract_tasks()
+        result = await extract_tasks(user_id=user_id)
         try:
             if result and result.get("tasks"):
                 high_priority = [t for t in result["tasks"]

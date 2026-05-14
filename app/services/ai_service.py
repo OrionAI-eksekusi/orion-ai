@@ -930,12 +930,11 @@ Jawab HANYA dengan JSON murni tanpa backtick:
                 "summary": "Email tidak dapat dimuat saat ini."}
 
 
-async def extract_tasks():
+async def extract_tasks(user_id: str = 'default'):
     try:
         from app.services.gmail_service import get_recent_emails
         all_emails = get_recent_emails(max_results=10, user_id=user_id)
         emails = [e for e in all_emails if
-            'azvickyfadzry02@gmail.com' not in e.get('from', '') and
             'noreply' not in e.get('from', '').lower() and
             e.get('subject', '').strip() not in ['No Subject', '']
         ]
