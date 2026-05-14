@@ -1066,10 +1066,26 @@ async def auto_extract_invoices_from_gmail(user_id: str = "default") -> dict:
                 invoice_emails.append(email)
         if not invoice_emails:
             return {"status": "no_invoices", "extracted": 0}
-        system_prompt = """Ekstrak data transaksi dari email. Jawab JSON array:
-[{"vendor_name":"...","item_description":"...","unit_price":0,"quantity":1,"total_amount":0,"invoice_number":"","category":"general","source_email":""}]
-Jika tidak ada transaksi: []
-Respond HANYA dengan JSON."""
+        system_prompt = """Kamu adalah sistem ekstraksi invoice untuk audit keuangan.
+TUGAS: Ekstrak HANYA transaksi pembelian/penjualan yang NYATA dari email.
+
+KRITERIA WAJIB — harus ada SEMUA ini untuk diekstrak:
+1. Ada nama vendor/supplier yang spesifik
+2. Ada angka harga yang jelas (bukan estimasi)
+3. Ada deskripsi item/jasa yang spesifik
+4. Email bukan promosi, newsletter, atau notifikasi sistem
+
+JANGAN ekstrak:
+- Email promosi Alibaba, LinkedIn, newsletter
+- Email notifikasi sistem (Google, Binance, dll)
+- Email tanpa angka harga yang spesifik
+- Email yang hanya menyebut harga secara umum
+
+Jawab JSON array:
+[{"vendor_name":"nama vendor spesifik","item_description":"deskripsi item spesifik","unit_price":angka_harga,"quantity":jumlah,"total_amount":total,"invoice_number":"nomor invoice","category":"general/electronics/services/dll","source_email":"subject email"}]
+
+Jika tidak ada transaksi yang memenuhi kriteria: []
+Respond HANYA dengan JSON array, tidak ada teks lain."""
         email_content = "\n---\n".join([
             f"From: {e['from']}\nSubject: {e['subject']}\nContent: {e['body'][:500]}"
             for e in invoice_emails[:5]
