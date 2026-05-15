@@ -17,6 +17,7 @@ DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 # ── Init Zenith DB ────────────────────────────────────────
 def init_zenith_db():
+    seed_market_prices()
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -1661,3 +1662,71 @@ def resolve_alert(alert_id: int, user_id: str):
         conn.close()
     except Exception as e:
         print(f"[ZENITH] Resolve alert error: {e}")
+
+def seed_market_prices():
+    """Isi data harga pasar referensi Indonesia"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        prices = [
+            # Electronics
+            ('laptop', 'electronics', 5000000, 25000000, 12000000, 'unit'),
+            ('laptop dell', 'electronics', 8000000, 20000000, 13000000, 'unit'),
+            ('laptop asus', 'electronics', 6000000, 18000000, 11000000, 'unit'),
+            ('laptop lenovo', 'electronics', 6000000, 18000000, 11000000, 'unit'),
+            ('monitor', 'electronics', 1500000, 8000000, 3500000, 'unit'),
+            ('printer', 'electronics', 800000, 5000000, 2000000, 'unit'),
+            ('keyboard', 'electronics', 100000, 1500000, 400000, 'unit'),
+            ('mouse', 'electronics', 50000, 800000, 200000, 'unit'),
+            ('hp smartphone', 'electronics', 1500000, 20000000, 5000000, 'unit'),
+            ('iphone', 'electronics', 8000000, 30000000, 15000000, 'unit'),
+            ('tablet', 'electronics', 2000000, 15000000, 5000000, 'unit'),
+            ('proyektor', 'electronics', 3000000, 20000000, 8000000, 'unit'),
+            ('kamera', 'electronics', 2000000, 30000000, 8000000, 'unit'),
+            # Furniture
+            ('kursi kantor', 'furniture', 300000, 5000000, 1200000, 'unit'),
+            ('meja kantor', 'furniture', 500000, 8000000, 2000000, 'unit'),
+            ('lemari arsip', 'furniture', 800000, 5000000, 2000000, 'unit'),
+            ('sofa kantor', 'furniture', 1000000, 10000000, 4000000, 'unit'),
+            ('partisi kantor', 'furniture', 500000, 3000000, 1500000, 'unit'),
+            # Consumables
+            ('kertas a4', 'consumables', 35000, 60000, 45000, 'rim'),
+            ('tinta printer', 'consumables', 50000, 300000, 150000, 'cartridge'),
+            ('spidol', 'consumables', 10000, 30000, 18000, 'unit'),
+            ('pulpen', 'consumables', 3000, 20000, 8000, 'unit'),
+            ('stapler', 'consumables', 15000, 100000, 40000, 'unit'),
+            ('amplop', 'consumables', 20000, 50000, 35000, 'pack'),
+            # Services
+            ('jasa desain', 'services', 500000, 10000000, 2000000, 'project'),
+            ('jasa cleaning', 'services', 500000, 3000000, 1200000, 'bulan'),
+            ('jasa keamanan', 'services', 2000000, 8000000, 4000000, 'bulan'),
+            ('jasa akuntansi', 'services', 1000000, 10000000, 3000000, 'bulan'),
+            ('jasa it support', 'services', 500000, 5000000, 2000000, 'bulan'),
+            # Food & Beverage
+            ('catering', 'food', 25000, 100000, 50000, 'porsi'),
+            ('air mineral galon', 'food', 18000, 25000, 20000, 'galon'),
+            ('kopi', 'food', 50000, 200000, 100000, 'kg'),
+            # Vehicle
+            ('sewa mobil', 'vehicle', 300000, 1000000, 500000, 'hari'),
+            ('bensin', 'vehicle', 10000, 15000, 12500, 'liter'),
+            ('service kendaraan', 'vehicle', 200000, 2000000, 600000, 'servis'),
+            # Marketing
+            ('iklan google', 'marketing', 500000, 10000000, 2000000, 'bulan'),
+            ('iklan instagram', 'marketing', 200000, 5000000, 1000000, 'bulan'),
+            ('cetak brosur', 'marketing', 200000, 2000000, 600000, 'rim'),
+            ('banner', 'marketing', 50000, 500000, 150000, 'unit'),
+        ]
+        
+        for item in prices:
+            c.execute('''
+                INSERT OR IGNORE INTO market_price_reference 
+                (item_name, category, min_price, max_price, avg_price, unit, source)
+                VALUES (?, ?, ?, ?, ?, ?, 'orion_default')
+            ''', item)
+        
+        conn.commit()
+        conn.close()
+        print(f"[ZENITH] ✅ {len(prices)} data harga pasar ditambahkan")
+    except Exception as e:
+        print(f"[ZENITH] ❌ Seed market prices error: {e}")

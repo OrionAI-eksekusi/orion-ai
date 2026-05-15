@@ -371,3 +371,72 @@ async def auto_extract_wa(request: Request):
         return {"status": "success", "data": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.post("/market-price/seed")
+async def seed_market_price(request: Request):
+    """Seed data harga pasar default"""
+    try:
+        body = await request.json()
+        secret = body.get("secret", "")
+        if secret != "orion-admin-2026":
+            return {"status": "error", "message": "Unauthorized"}
+        from app.services.zenith_service import seed_market_prices
+        seed_market_prices()
+        return {"status": "success", "message": "Data harga pasar berhasil ditambahkan"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.post("/market-price/add")
+async def add_market_price(request: Request):
+    """Tambah data harga pasar manual"""
+    try:
+        body = await request.json()
+        secret = body.get("secret", "")
+        if secret != "orion-admin-2026":
+            return {"status": "error", "message": "Unauthorized"}
+        import sqlite3
+        from app.services.database_service import DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO market_price_reference 
+            (item_name, category, min_price, max_price, avg_price, unit, source)
+            VALUES (?, ?, ?, ?, ?, ?, 'manual')
+        ''', (
+            body.get("item_name"),
+            body.get("category", "general"),
+            body.get("min_price", 0),
+            body.get("max_price", 0),
+            body.get("avg_price", 0),
+            body.get("unit", "unit"),
+        ))
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": f"Harga {body.get('item_name')} ditambahkan"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/market-price/list")
+async def list_market_prices(category: str = ""):
+    """List semua data harga pasar"""
+    try:
+        import sqlite3
+        from app.services.database_service import DB_PATH
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        if category:
+            c.execute("SELECT * FROM market_price_reference WHERE category = ? ORDER BY item_name", (category,))
+        else:
+            c.execute("SELECT * FROM market_price_reference ORDER BY category, item_name")
+        rows = c.fetchall()
+        conn.close()
+        return {"status": "success", "count": len(rows), "prices": [
+            {"id": r[0], "item_name": r[1], "category": r[2],
+             "min_price": r[3], "max_price": r[4], "avg_price": r[5],
+             "unit": r[6], "source": r[7]} for r in rows
+        ]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
