@@ -238,7 +238,7 @@ def init_user_plan(user_id: str):
     c = conn.cursor()
 
     # Cek apakah sudah punya trial
-    c.execute("SELECT trial_start FROM user_profiles WHERE user_id = ?", (user_id,))
+    c.execute("SELECT trial_start FROM user_profiles WHERE user_id = %s", (user_id,))
     row = c.fetchone()
 
     if row and row[0]:
@@ -731,7 +731,7 @@ def extend_trial(user_id: str, days: int = 30):
         
         from datetime import datetime, timedelta
         new_end = (datetime.now() + timedelta(days=days)).isoformat()
-        c.execute("UPDATE user_profiles SET trial_end = ?, plan = 'trial', updated_at = ? WHERE user_id = ?", 
+        c.execute("UPDATE user_profiles SET trial_end = %s, plan = 'trial', updated_at = %s WHERE user_id = %s", 
                   (new_end, datetime.now().isoformat(), user_id))
         
         print(f"[DB] Rows updated: {c.rowcount}")
