@@ -915,3 +915,18 @@ async def extend_trial_endpoint(request: Request):
         return {"status": "success" if result else "error", "user_id": user_id, "days": days}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@router.get("/admin/debug-db")
+async def debug_db():
+    import os, sqlite3
+    from app.services.database_service import DB_PATH
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row[0] for row in c.fetchall()]
+        conn.close()
+        return {"db_path": DB_PATH, "tables": tables, "exists": os.path.exists(DB_PATH)}
+    except Exception as e:
+        return {"error": str(e), "db_path": DB_PATH}
