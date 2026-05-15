@@ -8,7 +8,8 @@ from app.services.database_service import (
     init_db, get_wa_messages, mark_replied,
     save_user_profile, get_user_profile, get_all_active_users,
     save_fcm_token_db, get_fcm_token_db, update_user_fcm_token,
-    get_user_plan, init_user_plan, increment_daily_commands, upgrade_user_plan
+    get_user_plan, init_user_plan, increment_daily_commands, upgrade_user_plan,
+    extend_trial
 )
 from app.services.calendar_service import get_upcoming_events
 from app.services.memory_service import (
