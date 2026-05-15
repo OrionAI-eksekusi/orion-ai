@@ -21,7 +21,7 @@ def init_memory_db():
     # ── Customer Memory (WA) ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS customer_memory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             phone TEXT UNIQUE NOT NULL,
             name TEXT DEFAULT '',
             first_seen TEXT NOT NULL,
@@ -36,7 +36,7 @@ def init_memory_db():
     # ── Personal Brain ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS personal_brain (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT DEFAULT 'default',
             entity_name TEXT NOT NULL,
             entity_type TEXT DEFAULT 'contact',

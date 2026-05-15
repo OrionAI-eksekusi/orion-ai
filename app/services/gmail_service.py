@@ -60,7 +60,7 @@ def _save_token_to_db(creds: Credentials):
         ''')
         c.execute('''
             INSERT INTO gmail_tokens (id, token_json, updated_at)
-            VALUES (1, ?, datetime('now'))
+            VALUES (1, ?, NOW())
             ON CONFLICT(id) DO UPDATE SET
                 token_json = excluded.token_json,
                 updated_at = excluded.updated_at

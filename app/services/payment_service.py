@@ -13,7 +13,7 @@ def init_payment_db():
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS invoices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT DEFAULT 'default',
             invoice_number TEXT UNIQUE NOT NULL,
             customer_name TEXT NOT NULL,
