@@ -312,7 +312,7 @@ Respond HANYA dengan JSON."""
             }]
         }
 
-        async with httpx.AsyncClient(timeout=45) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             res = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers=headers,
