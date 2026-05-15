@@ -12,11 +12,13 @@ def get_connection():
     if database_url and database_url.startswith("postgresql"):
         try:
             import psycopg2
+            print(f"[DB] Connecting to PostgreSQL: {database_url[:30]}...")
             conn = psycopg2.connect(database_url)
             conn.autocommit = False
+            print("[DB] ✅ PostgreSQL connected!")
             return conn, "postgres"
         except Exception as e:
-            print(f"[DB] PostgreSQL gagal: {e} — fallback SQLite")
+            print(f"[DB] ❌ PostgreSQL gagal: {e} — fallback SQLite")
     conn, _db_type = get_connection()
     return conn, "sqlite"
 
