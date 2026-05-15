@@ -247,9 +247,9 @@ async def health_check():
 
     db_status = False
     try:
-        import sqlite3 as _sqlite3
         conn, _db_type = get_connection()
-        conn.execute("SELECT 1")
+        c = conn.cursor()
+        c.execute("SELECT 1")
         conn.close()
         db_status = True
     except:
