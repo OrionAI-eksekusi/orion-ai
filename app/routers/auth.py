@@ -74,7 +74,7 @@ async def google_callback(code: str, state: str = "default"):
                     access_token TEXT,
                     refresh_token TEXT,
                     token_json TEXT,
-                    updated_at TEXT DEFAULT (datetime('now'))
+                    updated_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
             c.execute('''

@@ -25,8 +25,8 @@ def init_payment_db():
             status TEXT DEFAULT 'unpaid',
             reminder_count INTEGER DEFAULT 0,
             paid_at TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 

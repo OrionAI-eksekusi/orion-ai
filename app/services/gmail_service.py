@@ -55,7 +55,7 @@ def _save_token_to_db(creds: Credentials):
             CREATE TABLE IF NOT EXISTS gmail_tokens (
                 id INTEGER PRIMARY KEY,
                 token_json TEXT NOT NULL,
-                updated_at TEXT DEFAULT (datetime('now'))
+                updated_at TIMESTAMP DEFAULT NOW()
             )
         ''')
         c.execute('''

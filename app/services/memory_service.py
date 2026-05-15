@@ -46,8 +46,8 @@ def init_memory_db():
             follow_up_done INTEGER DEFAULT 0,
             follow_up_count INTEGER DEFAULT 0,
             last_contact TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
