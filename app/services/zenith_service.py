@@ -1721,7 +1721,7 @@ def seed_market_prices():
         
         for item in prices:
             c.execute('''
-                INSERT OR IGNORE INTO market_price_reference 
+                INSERT INTO market_price_reference 
                 (item_name, category, min_price, max_price, avg_price, unit, source)
                 VALUES (?, ?, ?, ?, ?, ?, 'orion_default')
             ''', item)

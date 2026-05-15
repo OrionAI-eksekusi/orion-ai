@@ -649,7 +649,7 @@ def save_fcm_token_db(token: str, user_id: str = 'default'):
          created_at TIMESTAMP DEFAULT NOW())
     ''')
     c.execute(
-        "INSERT OR REPLACE INTO fcm_tokens (user_id, token) VALUES (?, ?)",
+        "INSERT INTO fcm_tokens (user_id, token) VALUES (?, ?)",
         (user_id, token)
     )
     c.execute(
