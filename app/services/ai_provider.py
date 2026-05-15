@@ -157,7 +157,7 @@ async def _call_claude(system_prompt: str, user_message: str) -> str:
             "system": full_system,
             "messages": [{"role": "user", "content": user_message}]
         }
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=90) as client:
             res = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers=headers,
