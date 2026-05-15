@@ -15,3 +15,5 @@ reportlab
 groq
 python-multipart
 pg8000==1.31.2
+
+psycopg2-binary==2.9.9
