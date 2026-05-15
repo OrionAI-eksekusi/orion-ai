@@ -14,7 +14,7 @@ def get_connection():
             import psycopg2
             print(f"[DB] Connecting to PostgreSQL: {database_url[:30]}...")
             conn = psycopg2.connect(database_url)
-            conn.autocommit = False
+            conn.autocommit = True
             print("[DB] ✅ PostgreSQL connected!")
             return conn, "postgres"
         except Exception as e:
