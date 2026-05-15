@@ -7,6 +7,17 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Init database saat startup
+    from app.services.database_service import init_db
+    from app.services.memory_service import init_memory_db
+    from app.services.zenith_service import init_zenith_db
+    try:
+        init_db()
+        init_memory_db()
+        init_zenith_db()
+        print("[STARTUP] ✅ Database initialized!")
+    except Exception as e:
+        print(f"[STARTUP] ❌ DB init error: {e}")
     start_scheduler()
     yield
     stop_scheduler()
