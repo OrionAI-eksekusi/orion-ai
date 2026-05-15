@@ -1723,7 +1723,8 @@ def seed_market_prices():
             c.execute('''
                 INSERT INTO market_price_reference 
                 (item_name, category, min_price, max_price, avg_price, unit, source)
-                VALUES (?, ?, ?, ?, ?, ?, 'orion_default')
+                VALUES (%s, %s, %s, %s, %s, %s, 'orion_default')
+                ON CONFLICT DO NOTHING
             ''', item)
         
         conn.commit()
