@@ -38,7 +38,7 @@ def init_db():
             replied INTEGER DEFAULT 0,
             follow_up_sent INTEGER DEFAULT 0,
             follow_up_count INTEGER DEFAULT 0,
-            received_timestamp TEXT NOT NULL DEFAULT (NOW())
+            received_timestamp TIMESTAMP DEFAULT NOW()
         )
     ''')
 
@@ -57,10 +57,10 @@ def init_db():
             timezone TEXT DEFAULT 'Asia/Jakarta',
             is_active INTEGER DEFAULT 1,
             plan TEXT DEFAULT 'trial',
-            trial_start TIMESTAMP DEFAULT '',
-            trial_end TIMESTAMP DEFAULT '',
+            trial_start TIMESTAMP,
+            trial_end TIMESTAMP,
             daily_commands INTEGER DEFAULT 0,
-            daily_reset_date TIMESTAMP DEFAULT '',
+            daily_reset_date TIMESTAMP,
             total_commands INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT NOW(),
             updated_at TIMESTAMP DEFAULT NOW()
@@ -127,10 +127,10 @@ def init_db():
     # ── Migrations User Profiles (plan system) ──
     plan_migrations = [
         "ALTER TABLE user_profiles ADD COLUMN plan TEXT DEFAULT 'trial'",
-        "ALTER TABLE user_profiles ADD COLUMN trial_start TIMESTAMP DEFAULT ''",
-        "ALTER TABLE user_profiles ADD COLUMN trial_end TIMESTAMP DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN trial_start TIMESTAMP",
+        "ALTER TABLE user_profiles ADD COLUMN trial_end TIMESTAMP",
         "ALTER TABLE user_profiles ADD COLUMN daily_commands INTEGER DEFAULT 0",
-        "ALTER TABLE user_profiles ADD COLUMN daily_reset_date TIMESTAMP DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN daily_reset_date TIMESTAMP",
         "ALTER TABLE user_profiles ADD COLUMN total_commands INTEGER DEFAULT 0",
     ]
     for m in plan_migrations:
