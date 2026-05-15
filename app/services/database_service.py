@@ -5,6 +5,21 @@ from datetime import datetime, timedelta
 
 DB_PATH = os.getenv("DB_PATH", "orion.db")
 
+
+def get_connection():
+    """Ambil koneksi database — PostgreSQL kalau ada, SQLite kalau tidak"""
+    database_url = os.getenv("DATABASE_URL", "")
+    if database_url and database_url.startswith("postgresql"):
+        try:
+            import psycopg2
+            conn = psycopg2.connect(database_url)
+            conn.autocommit = False
+            return conn, "postgres"
+        except Exception as e:
+            print(f"[DB] PostgreSQL gagal: {e} — fallback SQLite")
+    conn = sqlite3.connect(DB_PATH)
+    return conn, "sqlite"
+
 def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
