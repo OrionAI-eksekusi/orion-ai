@@ -714,10 +714,9 @@ def extend_trial(user_id: str, days: int = 30):
         cols = [row[1] for row in c.fetchall()]
         print(f"[DB] Columns: {cols}")
         
-        if 'trial_end_date' in cols:
-            c.execute(f"UPDATE user_plans SET trial_end_date = date('now', '+{days} days'), plan = 'trial' WHERE user_id = ?", (user_id,))
-        elif 'trial_end' in cols:
-            c.execute(f"UPDATE user_plans SET trial_end = datetime('now', '+{days} days'), plan = 'trial' WHERE user_id = ?", (user_id,))
+        from datetime import datetime, timedelta
+        new_end = (datetime.now() + timedelta(days=days)).isoformat()
+        c.execute("UPDATE user_plans SET trial_end = ?, plan = 'trial' WHERE user_id = ?", (new_end, user_id))
         
         print(f"[DB] Rows updated: {c.rowcount}")
         conn.commit()
