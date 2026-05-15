@@ -930,3 +930,19 @@ async def debug_db():
         return {"db_path": DB_PATH, "tables": tables, "exists": os.path.exists(DB_PATH)}
     except Exception as e:
         return {"error": str(e), "db_path": DB_PATH}
+
+
+@router.post("/admin/init-db")
+async def init_db_endpoint(request: Request):
+    try:
+        body = await request.json()
+        secret = body.get("secret", "")
+        if secret != "orion-admin-2026":
+            return {"status": "error", "message": "Unauthorized"}
+        from app.services.database_service import init_db
+        init_db()
+        from app.services.zenith_service import init_zenith_db
+        init_zenith_db()
+        return {"status": "success", "message": "Database initialized!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
