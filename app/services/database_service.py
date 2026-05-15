@@ -716,7 +716,8 @@ def extend_trial(user_id: str, days: int = 30):
         
         from datetime import datetime, timedelta
         new_end = (datetime.now() + timedelta(days=days)).isoformat()
-        c.execute("UPDATE user_plans SET trial_end = ?, plan = 'trial' WHERE user_id = ?", (new_end, user_id))
+        c.execute("UPDATE user_profiles SET trial_end = ?, plan = 'trial', updated_at = ? WHERE user_id = ?", 
+                  (new_end, datetime.now().isoformat(), user_id))
         
         print(f"[DB] Rows updated: {c.rowcount}")
         conn.commit()
