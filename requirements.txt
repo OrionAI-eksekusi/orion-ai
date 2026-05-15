@@ -14,4 +14,3 @@ apscheduler
 reportlab
 groq
 python-multipart
-asyncpg==0.29.0
