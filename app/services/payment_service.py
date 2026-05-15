@@ -60,7 +60,7 @@ def create_invoice(
         INSERT INTO invoices
             (user_id, invoice_number, customer_name, customer_phone,
              customer_email, amount, description, due_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ''', (user_id, invoice_number, customer_name, customer_phone,
           customer_email, amount, description, due_date))
 
@@ -89,7 +89,7 @@ def get_invoice_by_number(invoice_number: str, user_id: str) -> dict:
                customer_email, amount, description, due_date,
                status, reminder_count
         FROM invoices
-        WHERE invoice_number = ? AND user_id = ?
+        WHERE invoice_number = %s AND user_id = %s
     ''', (invoice_number, user_id))
     row = c.fetchone()
     conn.close()
@@ -119,7 +119,7 @@ def get_unpaid_invoices(user_id: str) -> list:
                customer_email, amount, description, due_date,
                reminder_count, created_at
         FROM invoices
-        WHERE user_id = ?
+        WHERE user_id = %s
         AND status = 'unpaid'
         AND reminder_count < 3
         ORDER BY due_date ASC
@@ -150,9 +150,9 @@ def get_due_invoices(user_id: str) -> list:
         SELECT invoice_number, customer_name, customer_phone,
                customer_email, amount, description, due_date, reminder_count
         FROM invoices
-        WHERE user_id = ?
+        WHERE user_id = %s
         AND status = 'unpaid'
-        AND due_date <= ?
+        AND due_date <= %s
         AND reminder_count < 3
         ORDER BY due_date ASC
     ''', (user_id, today))
@@ -180,9 +180,9 @@ def mark_invoice_paid(invoice_number: str, user_id: str) -> bool:
         c.execute('''
             UPDATE invoices SET
                 status = 'paid',
-                paid_at = ?,
-                updated_at = ?
-            WHERE invoice_number = ? AND user_id = ?
+                paid_at = %s,
+                updated_at = %s
+            WHERE invoice_number = %s AND user_id = %s
         ''', (datetime.now().isoformat(), datetime.now().isoformat(),
               invoice_number, user_id))
         affected = c.rowcount
@@ -203,8 +203,8 @@ def increment_reminder_count(invoice_number: str, user_id: str):
     c.execute('''
         UPDATE invoices SET
             reminder_count = reminder_count + 1,
-            updated_at = ?
-        WHERE invoice_number = ? AND user_id = ?
+            updated_at = %s
+        WHERE invoice_number = %s AND user_id = %s
     ''', (datetime.now().isoformat(), invoice_number, user_id))
     conn.commit()
     conn.close()
@@ -220,7 +220,7 @@ def get_all_invoices(user_id: str) -> list:
         SELECT invoice_number, customer_name, customer_phone,
                amount, description, due_date, status, reminder_count, created_at
         FROM invoices
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY created_at DESC
         LIMIT 50
     ''', (user_id,))

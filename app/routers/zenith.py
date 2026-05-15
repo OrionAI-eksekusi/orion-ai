@@ -212,11 +212,11 @@ async def reset_zenith_data(user_id: str):
         init_zenith_db()
         conn, _db_type = get_connection()
         c = conn.cursor()
-        c.execute("DELETE FROM vendor_transactions WHERE user_id = ?", (user_id,))
-        c.execute("DELETE FROM vendor_profiles WHERE user_id = ?", (user_id,))
-        c.execute("DELETE FROM risk_alerts WHERE user_id = ?", (user_id,))
-        c.execute("DELETE FROM compliance_audit_trail WHERE user_id = ?", (user_id,))
-        c.execute("DELETE FROM investigation_log WHERE user_id = ?", (user_id,))
+        c.execute("DELETE FROM vendor_transactions WHERE user_id = %s", (user_id,))
+        c.execute("DELETE FROM vendor_profiles WHERE user_id = %s", (user_id,))
+        c.execute("DELETE FROM risk_alerts WHERE user_id = %s", (user_id,))
+        c.execute("DELETE FROM compliance_audit_trail WHERE user_id = %s", (user_id,))
+        c.execute("DELETE FROM investigation_log WHERE user_id = %s", (user_id,))
         conn.commit()
         conn.close()
         return {"status": "success", "message": f"Data Zenith {user_id} berhasil direset"}
@@ -403,7 +403,7 @@ async def add_market_price(request: Request):
         c.execute('''
             INSERT INTO market_price_reference 
             (item_name, category, min_price, max_price, avg_price, unit, source)
-            VALUES (?, ?, ?, ?, ?, ?, 'manual')
+            VALUES (%s, %s, %s, %s, %s, %s, 'manual')
         ''', (
             body.get("item_name"),
             body.get("category", "general"),
@@ -428,7 +428,7 @@ async def list_market_prices(category: str = ""):
         conn, _db_type = get_connection()
         c = conn.cursor()
         if category:
-            c.execute("SELECT * FROM market_price_reference WHERE category = ? ORDER BY item_name", (category,))
+            c.execute("SELECT * FROM market_price_reference WHERE category = %s ORDER BY item_name", (category,))
         else:
             c.execute("SELECT * FROM market_price_reference ORDER BY category, item_name")
         rows = c.fetchall()

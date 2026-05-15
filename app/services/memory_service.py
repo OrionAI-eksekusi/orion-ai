@@ -136,7 +136,7 @@ def get_customer_memory(phone: str):
         return None
     conn, _db_type = get_connection()
     c = conn.cursor()
-    c.execute("SELECT * FROM customer_memory WHERE phone=?", (phone,))
+    c.execute("SELECT * FROM customer_memory WHERE phone=%s", (phone,))
     row = c.fetchone()
     conn.close()
     if not row:
@@ -167,14 +167,14 @@ def update_customer_memory(phone: str, message: str, reply: str):
     conn.execute("PRAGMA journal_mode=WAL")
     c = conn.cursor()
     try:
-        c.execute("SELECT name, history, message_count FROM customer_memory WHERE phone=?", (phone,))
+        c.execute("SELECT name, history, message_count FROM customer_memory WHERE phone=%s", (phone,))
         row = c.fetchone()
         new_entry = {"msg": message[:500], "reply": reply[:500], "time": now}
         if not row:
             history = json.dumps([new_entry])
             c.execute('''
                 INSERT INTO customer_memory (phone, name, first_seen, last_seen, message_count, history)
-                VALUES (?, ?, ?, ?, 1, ?)
+                VALUES (%s, %s, %s, %s, 1, %s)
             ''', (phone, extracted_name, now, now, history))
         else:
             existing_name, existing_history_raw, msg_count = row
@@ -187,8 +187,8 @@ def update_customer_memory(phone: str, message: str, reply: str):
             final_name = existing_name or extracted_name
             c.execute('''
                 UPDATE customer_memory
-                SET last_seen=?, message_count=message_count+1, history=?, name=?
-                WHERE phone=?
+                SET last_seen=%s, message_count=message_count+1, history=%s, name=%s
+                WHERE phone=%s
             ''', (now, json.dumps(history), final_name, phone))
         conn.commit()
     except Exception as e:
@@ -206,7 +206,7 @@ def update_customer_name(phone: str, name: str):
         return
     conn, _db_type = get_connection()
     c = conn.cursor()
-    c.execute("UPDATE customer_memory SET name=? WHERE phone=?", (clean_name, phone))
+    c.execute("UPDATE customer_memory SET name=%s WHERE phone=%s", (clean_name, phone))
     conn.commit()
     conn.close()
 
@@ -219,7 +219,7 @@ def get_all_customers(limit=50):
         FROM customer_memory
         WHERE phone NOT LIKE '%broadcast%'
         AND phone NOT LIKE '%status%'
-        ORDER BY last_seen DESC LIMIT ?
+        ORDER BY last_seen DESC LIMIT %s
     ''', (limit,))
     rows = c.fetchall()
     conn.close()
@@ -275,7 +275,7 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
         # Cek apakah sudah ada
         c.execute('''
             SELECT id, notes FROM personal_brain
-            WHERE user_id = ? AND entity_name LIKE ?
+            WHERE user_id = %s AND entity_name LIKE %s
         ''', (user_id, f'%{entity_name}%'))
         row = c.fetchone()
 
@@ -285,12 +285,12 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
             new_notes = f"{existing_notes}\n[{datetime.now().strftime('%d/%m/%Y %H:%M')}] {notes}".strip()
             c.execute('''
                 UPDATE personal_brain SET
-                    notes = ?,
-                    details = ?,
-                    follow_up_date = CASE WHEN ? != '' THEN ? ELSE follow_up_date END,
-                    follow_up_done = CASE WHEN ? != '' THEN 0 ELSE follow_up_done END,
-                    updated_at = ?
-                WHERE id = ?
+                    notes = %s,
+                    details = %s,
+                    follow_up_date = CASE WHEN %s != '' THEN %s ELSE follow_up_date END,
+                    follow_up_done = CASE WHEN %s != '' THEN 0 ELSE follow_up_done END,
+                    updated_at = %s
+                WHERE id = %s
             ''', (new_notes, json.dumps(details), follow_up_date, follow_up_date,
                   follow_up_date, now, row[0]))
         else:
@@ -299,7 +299,7 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
             c.execute('''
                 INSERT INTO personal_brain
                     (user_id, entity_name, entity_type, notes, details, follow_up_date, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ''', (user_id, entity_name, entity_type, timestamped_notes,
                   json.dumps(details), follow_up_date, now, now))
 
@@ -320,7 +320,7 @@ def get_brain_entry(user_id: str, entity_name: str) -> dict:
             SELECT entity_name, entity_type, notes, details,
                    follow_up_date, follow_up_count, last_contact, created_at
             FROM personal_brain
-            WHERE user_id = ? AND entity_name LIKE ?
+            WHERE user_id = %s AND entity_name LIKE %s
             ORDER BY updated_at DESC LIMIT 1
         ''', (user_id, f'%{entity_name}%'))
         row = c.fetchone()
@@ -348,7 +348,7 @@ def get_all_brain_entries(user_id: str) -> list:
             SELECT entity_name, entity_type, notes, follow_up_date,
                    follow_up_done, last_contact, updated_at
             FROM personal_brain
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY updated_at DESC
         ''', (user_id,))
         rows = c.fetchall()
@@ -372,10 +372,10 @@ def get_pending_follow_ups(user_id: str) -> list:
         c.execute('''
             SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
             FROM personal_brain
-            WHERE user_id = ?
+            WHERE user_id = %s
             AND follow_up_done = 0
             AND follow_up_date != ''
-            AND follow_up_date <= ?
+            AND follow_up_date <= %s
             AND follow_up_count < 2
             ORDER BY follow_up_date ASC
         ''', (user_id, today))
@@ -399,9 +399,9 @@ def mark_brain_follow_up_sent(user_id: str, entity_name: str):
             UPDATE personal_brain SET
                 follow_up_count = follow_up_count + 1,
                 follow_up_done = CASE WHEN follow_up_count + 1 >= 2 THEN 1 ELSE 0 END,
-                last_contact = ?,
-                updated_at = ?
-            WHERE user_id = ? AND entity_name LIKE ?
+                last_contact = %s,
+                updated_at = %s
+            WHERE user_id = %s AND entity_name LIKE %s
         ''', (datetime.now().isoformat(), datetime.now().isoformat(),
               user_id, f'%{entity_name}%'))
         conn.commit()
@@ -418,8 +418,8 @@ def search_brain(user_id: str, keyword: str) -> list:
         c.execute('''
             SELECT entity_name, entity_type, notes, follow_up_date, updated_at
             FROM personal_brain
-            WHERE user_id = ?
-            AND (entity_name LIKE ? OR notes LIKE ?)
+            WHERE user_id = %s
+            AND (entity_name LIKE %s OR notes LIKE %s)
             ORDER BY updated_at DESC LIMIT 5
         ''', (user_id, f'%{keyword}%', f'%{keyword}%'))
         rows = c.fetchall()

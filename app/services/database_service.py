@@ -158,7 +158,7 @@ def save_user_profile(user_id: str, name: str, email: str, phone: str,
     c = conn.cursor()
     c.execute('''
         INSERT INTO user_profiles (user_id, name, email, phone, city, briefing_hour, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT(user_id) DO UPDATE SET
             name=excluded.name,
             email=excluded.email,
@@ -179,7 +179,7 @@ def get_user_profile(user_id: str) -> dict:
     c.execute('''
         SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token,
                plan, trial_start, trial_end, daily_commands, total_commands
-        FROM user_profiles WHERE user_id = ?
+        FROM user_profiles WHERE user_id = %s
     ''', (user_id,))
     row = c.fetchone()
     conn.close()
@@ -214,8 +214,8 @@ def update_user_fcm_token(user_id: str, fcm_token: str):
     conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
-        UPDATE user_profiles SET fcm_token = ?, updated_at = ?
-        WHERE user_id = ?
+        UPDATE user_profiles SET fcm_token = %s, updated_at = %s
+        WHERE user_id = %s
     ''', (fcm_token, datetime.now().isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -225,8 +225,8 @@ def update_user_gmail_token(user_id: str, gmail_token: str):
     conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
-        UPDATE user_profiles SET gmail_token = ?, updated_at = ?
-        WHERE user_id = ?
+        UPDATE user_profiles SET gmail_token = %s, updated_at = %s
+        WHERE user_id = %s
     ''', (gmail_token, datetime.now().isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -253,10 +253,10 @@ def init_user_plan(user_id: str):
     c.execute('''
         UPDATE user_profiles SET
             plan = 'trial',
-            trial_start = ?,
-            trial_end = ?,
-            updated_at = ?
-        WHERE user_id = ?
+            trial_start = %s,
+            trial_end = %s,
+            updated_at = %s
+        WHERE user_id = %s
     ''', (now.isoformat(), trial_end.isoformat(), now.isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -269,7 +269,7 @@ def get_user_plan(user_id: str) -> dict:
     c = conn.cursor()
     c.execute('''
         SELECT plan, trial_start, trial_end, daily_commands, daily_reset_date, total_commands
-        FROM user_profiles WHERE user_id = ?
+        FROM user_profiles WHERE user_id = %s
     ''', (user_id,))
     row = c.fetchone()
     conn.close()
@@ -359,9 +359,9 @@ def _reset_daily_commands(user_id: str, today: str):
         c.execute('''
             UPDATE user_profiles SET
                 daily_commands = 0,
-                daily_reset_date = ?,
-                updated_at = ?
-            WHERE user_id = ?
+                daily_reset_date = %s,
+                updated_at = %s
+            WHERE user_id = %s
         ''', (today, datetime.now().isoformat(), user_id))
         conn.commit()
         conn.close()
@@ -379,9 +379,9 @@ def increment_daily_commands(user_id: str):
             UPDATE user_profiles SET
                 daily_commands = daily_commands + 1,
                 total_commands = total_commands + 1,
-                daily_reset_date = ?,
-                updated_at = ?
-            WHERE user_id = ?
+                daily_reset_date = %s,
+                updated_at = %s
+            WHERE user_id = %s
         ''', (today, datetime.now().isoformat(), user_id))
         conn.commit()
         conn.close()
@@ -395,9 +395,9 @@ def upgrade_user_plan(user_id: str, plan: str):
     c = conn.cursor()
     c.execute('''
         UPDATE user_profiles SET
-            plan = ?,
-            updated_at = ?
-        WHERE user_id = ?
+            plan = %s,
+            updated_at = %s
+        WHERE user_id = %s
     ''', (plan, datetime.now().isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -447,11 +447,11 @@ def get_unreplied_messages(hours: int = 24, user_id: str = 'default'):
     c.execute('''
         SELECT DISTINCT phone, message, received_timestamp, follow_up_count
         FROM wa_messages
-        WHERE user_id = ?
+        WHERE user_id = %s
         AND replied = 0
         AND follow_up_count < 2
         AND received_timestamp IS NOT NULL
-        AND (julianday('now') - julianday(received_timestamp)) * 24 >= ?
+        AND (julianday('now') - julianday(received_timestamp)) * 24 >= %s
         ORDER BY received_timestamp ASC
     ''', (user_id, hours))
     rows = c.fetchall()
@@ -467,7 +467,7 @@ def mark_follow_up_sent(phone: str, user_id: str = 'default'):
         UPDATE wa_messages
         SET follow_up_sent=1,
             follow_up_count=follow_up_count+1
-        WHERE phone=? AND user_id=? AND replied=0
+        WHERE phone=%s AND user_id=%s AND replied=0
     ''', (phone, user_id))
     conn.commit()
     conn.close()
@@ -480,7 +480,7 @@ def get_follow_up_count(phone: str, user_id: str = 'default') -> int:
         c = conn.cursor()
         c.execute('''
             SELECT MAX(follow_up_count) FROM wa_messages
-            WHERE phone=? AND user_id=?
+            WHERE phone=%s AND user_id=%s
         ''', (phone, user_id))
         row = c.fetchone()
         conn.close()
@@ -500,18 +500,18 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
     c.execute('''
         INSERT INTO personal_brain
             (user_id, entity_name, entity_type, notes, details, follow_up_date, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT DO NOTHING
     ''', (user_id, entity_name, entity_type, notes,
           json_dumps(details), follow_up_date, datetime.now().isoformat()))
 
     c.execute('''
         UPDATE personal_brain SET
-            notes = notes || char(10) || ?,
-            details = ?,
-            follow_up_date = CASE WHEN ? != '' THEN ? ELSE follow_up_date END,
-            updated_at = ?
-        WHERE user_id = ? AND entity_name = ? AND id != last_insert_rowid()
+            notes = notes || char(10) || %s,
+            details = %s,
+            follow_up_date = CASE WHEN %s != '' THEN %s ELSE follow_up_date END,
+            updated_at = %s
+        WHERE user_id = %s AND entity_name = %s AND id != last_insert_rowid()
     ''', (notes, json_dumps(details), follow_up_date, follow_up_date,
           datetime.now().isoformat(), user_id, entity_name))
 
@@ -527,7 +527,7 @@ def get_brain_entry(user_id: str, entity_name: str) -> dict:
         SELECT entity_name, entity_type, notes, details,
                follow_up_date, follow_up_count, last_contact, created_at
         FROM personal_brain
-        WHERE user_id = ? AND entity_name LIKE ?
+        WHERE user_id = %s AND entity_name LIKE %s
         ORDER BY updated_at DESC LIMIT 1
     ''', (user_id, f'%{entity_name}%'))
     row = c.fetchone()
@@ -550,7 +550,7 @@ def get_all_brain_entries(user_id: str) -> list:
         SELECT entity_name, entity_type, notes, follow_up_date,
                follow_up_done, last_contact, updated_at
         FROM personal_brain
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY updated_at DESC
     ''', (user_id,))
     rows = c.fetchall()
@@ -570,10 +570,10 @@ def get_pending_follow_ups(user_id: str) -> list:
     c.execute('''
         SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
         FROM personal_brain
-        WHERE user_id = ?
+        WHERE user_id = %s
         AND follow_up_done = 0
         AND follow_up_date != ''
-        AND follow_up_date <= ?
+        AND follow_up_date <= %s
         AND follow_up_count < 2
         ORDER BY follow_up_date ASC
     ''', (user_id, today))
@@ -593,9 +593,9 @@ def mark_brain_follow_up_done(user_id: str, entity_name: str):
         UPDATE personal_brain SET
             follow_up_done = 1,
             follow_up_count = follow_up_count + 1,
-            last_contact = ?,
-            updated_at = ?
-        WHERE user_id = ? AND entity_name = ?
+            last_contact = %s,
+            updated_at = %s
+        WHERE user_id = %s AND entity_name = %s
     ''', (datetime.now().isoformat(), datetime.now().isoformat(),
           user_id, entity_name))
     conn.commit()
@@ -615,10 +615,10 @@ def search_brain(user_id: str, query: str) -> list:
         SELECT entity_name, entity_type, notes, follow_up_date,
                follow_up_done, last_contact
         FROM personal_brain
-        WHERE user_id = ? AND (
-            entity_name LIKE ? OR
-            notes LIKE ? OR
-            entity_type LIKE ?
+        WHERE user_id = %s AND (
+            entity_name LIKE %s OR
+            notes LIKE %s OR
+            entity_type LIKE %s
         )
         ORDER BY updated_at DESC LIMIT 10
     ''', (user_id, f'%{query}%', f'%{query}%', f'%{query}%'))
@@ -689,7 +689,7 @@ def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
         ''')
         c.execute('''
             INSERT INTO user_gmail_tokens (user_id, access_token, id_token, updated_at)
-            VALUES (?, ?, ?, NOW())
+            VALUES (%s, %s, %s, NOW())
             ON CONFLICT(user_id) DO UPDATE SET
                 access_token = excluded.access_token,
                 id_token = excluded.id_token,
@@ -709,7 +709,7 @@ def get_user_gmail_token(user_id: str) -> dict:
         c = conn.cursor()
         c.execute('''
             SELECT access_token, id_token, updated_at
-            FROM user_gmail_tokens WHERE user_id = ?
+            FROM user_gmail_tokens WHERE user_id = %s
         ''', (user_id,))
         row = c.fetchone()
         conn.close()

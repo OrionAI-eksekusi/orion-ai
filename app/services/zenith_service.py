@@ -367,7 +367,7 @@ async def detect_transaction_anomalies(user_id: str) -> dict:
                transaction_date, invoice_number, id, division,
                approved_by, payment_date
         FROM vendor_transactions
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY transaction_date DESC
         LIMIT 200
     ''', (user_id,))
@@ -551,7 +551,7 @@ async def ai_investigator(user_id: str, question: str) -> dict:
     c.execute('''
         SELECT vendor_name, item_description, unit_price, total_amount,
                transaction_date, invoice_number, category, division
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
         ORDER BY transaction_date DESC LIMIT 200
     ''', (user_id,))
     transactions = c.fetchall()
@@ -559,7 +559,7 @@ async def ai_investigator(user_id: str, question: str) -> dict:
     c.execute('''
         SELECT vendor_name, risk_level, risk_score, total_amount,
                total_transactions, reliability_score
-        FROM vendor_profiles WHERE user_id = ?
+        FROM vendor_profiles WHERE user_id = %s
         ORDER BY risk_score DESC
     ''', (user_id,))
     vendor_profiles = c.fetchall()
@@ -567,7 +567,7 @@ async def ai_investigator(user_id: str, question: str) -> dict:
     c.execute('''
         SELECT alert_type, severity, vendor_name, description,
                amount, risk_score, created_at
-        FROM risk_alerts WHERE user_id = ? AND status = 'open'
+        FROM risk_alerts WHERE user_id = %s AND status = 'open'
         ORDER BY risk_score DESC
     ''', (user_id,))
     alerts = c.fetchall()
@@ -581,7 +581,7 @@ async def ai_investigator(user_id: str, question: str) -> dict:
                AVG(unit_price) as avg_price,
                MIN(unit_price) as min_price,
                MAX(unit_price) as max_price
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
         GROUP BY month, vendor_name
         ORDER BY month DESC
         LIMIT 100
@@ -591,7 +591,7 @@ async def ai_investigator(user_id: str, question: str) -> dict:
     # Division spending
     c.execute('''
         SELECT division, SUM(total_amount) as total, COUNT(*) as count
-        FROM vendor_transactions WHERE user_id = ? AND division != ''
+        FROM vendor_transactions WHERE user_id = %s AND division != ''
         GROUP BY division ORDER BY total DESC
     ''', (user_id,))
     division_spending = c.fetchall()
@@ -719,7 +719,7 @@ Lakukan investigasi forensik berdasarkan data di atas.
         c.execute('''
             INSERT INTO investigation_log
             (user_id, question, findings, confidence)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         ''', (user_id, question, json.dumps(result, ensure_ascii=False),
               result.get('confidence_score', 'MEDIUM')))
         conn.commit()
@@ -1017,7 +1017,7 @@ async def procurement_watch(user_id: str) -> dict:
                MIN(unit_price) as min_price, MAX(unit_price) as max_price,
                COUNT(*) as count, SUM(total_amount) as total
         FROM vendor_transactions
-        WHERE user_id = ? AND division != ''
+        WHERE user_id = %s AND division != ''
         GROUP BY item_description, division
         ORDER BY item_description
     ''', (user_id,))
@@ -1029,7 +1029,7 @@ async def procurement_watch(user_id: str) -> dict:
                SUM(total_amount) as total_spend,
                AVG(unit_price) as avg_price,
                COUNT(DISTINCT vendor_name) as vendor_count
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
         GROUP BY item_description
         ORDER BY total_spend DESC
         LIMIT 20
@@ -1043,7 +1043,7 @@ async def procurement_watch(user_id: str) -> dict:
                MAX(unit_price) as max_price,
                (MAX(unit_price) - MIN(unit_price)) / MIN(unit_price) * 100 as variance_pct,
                COUNT(*) as tx_count
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
         GROUP BY vendor_name, item_description
         HAVING tx_count >= 2 AND variance_pct > 20
         ORDER BY variance_pct DESC
@@ -1156,7 +1156,7 @@ def get_compliance_report(user_id: str) -> dict:
                policy_violated, severity, approved_by,
                transaction_date, created_at
         FROM compliance_audit_trail
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY created_at DESC
         LIMIT 100
     ''', (user_id,))
@@ -1167,7 +1167,7 @@ def get_compliance_report(user_id: str) -> dict:
         SELECT event_type, severity, COUNT(*) as count,
                SUM(amount) as total_amount
         FROM compliance_audit_trail
-        WHERE user_id = ? AND policy_violated != ''
+        WHERE user_id = %s AND policy_violated != ''
         GROUP BY event_type, severity
         ORDER BY count DESC
     ''', (user_id,))
@@ -1178,7 +1178,7 @@ def get_compliance_report(user_id: str) -> dict:
         SELECT vendor_name, total_amount, transaction_date,
                invoice_number, approved_by
         FROM vendor_transactions
-        WHERE user_id = ?
+        WHERE user_id = %s
         AND (
             strftime('%w', transaction_date) = '0' OR
             strftime('%w', transaction_date) = '6'
@@ -1191,7 +1191,7 @@ def get_compliance_report(user_id: str) -> dict:
     c.execute('''
         SELECT vendor_name, total_amount, transaction_date, invoice_number
         FROM vendor_transactions
-        WHERE user_id = ? AND (approved_by = '' OR approved_by IS NULL)
+        WHERE user_id = %s AND (approved_by = '' OR approved_by IS NULL)
         AND total_amount > 5000000
         ORDER BY total_amount DESC
         LIMIT 20
@@ -1253,10 +1253,10 @@ def verify_alert(alert_id: int, user_id: str,
         c = conn.cursor()
         c.execute('''
             UPDATE risk_alerts SET
-                verified_by = ?,
-                verification_result = ?,
+                verified_by = %s,
+                verification_result = %s,
                 status = 'verified'
-            WHERE id = ? AND user_id = ?
+            WHERE id = %s AND user_id = %s
         ''', (verified_by, result, result, result, alert_id, user_id))
         conn.commit()
         conn.close()
@@ -1286,7 +1286,7 @@ def get_executive_dashboard(user_id: str) -> dict:
 
     c.execute('''
         SELECT SUM(total_amount), COUNT(*), AVG(total_amount)
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
     ''', (user_id,))
     row = c.fetchone()
     total_spend = row[0] or 0
@@ -1295,7 +1295,7 @@ def get_executive_dashboard(user_id: str) -> dict:
 
     c.execute('''
         SELECT vendor_name, SUM(total_amount) as total, COUNT(*) as count
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
         GROUP BY vendor_name ORDER BY total DESC LIMIT 5
     ''', (user_id,))
     top_vendors = [{"vendor": r[0], "total": r[1], "count": r[2]}
@@ -1303,14 +1303,14 @@ def get_executive_dashboard(user_id: str) -> dict:
 
     c.execute('''
         SELECT severity, COUNT(*) FROM risk_alerts
-        WHERE user_id = ? AND status = 'open'
+        WHERE user_id = %s AND status = 'open'
         GROUP BY severity
     ''', (user_id,))
     alerts = {r[0]: r[1] for r in c.fetchall()}
 
     c.execute('''
         SELECT vendor_name, risk_level, risk_score, total_amount
-        FROM vendor_profiles WHERE user_id = ?
+        FROM vendor_profiles WHERE user_id = %s
         ORDER BY risk_score DESC LIMIT 5
     ''', (user_id,))
     risky_vendors = [{"vendor": r[0], "risk_level": r[1],
@@ -1320,7 +1320,7 @@ def get_executive_dashboard(user_id: str) -> dict:
     c.execute('''
         SELECT strftime('%Y-%m', transaction_date) as month,
                SUM(total_amount) as total, COUNT(*) as count
-        FROM vendor_transactions WHERE user_id = ?
+        FROM vendor_transactions WHERE user_id = %s
         GROUP BY month ORDER BY month DESC LIMIT 6
     ''', (user_id,))
     monthly = [{"month": r[0], "total": r[1], "count": r[2]}
@@ -1328,7 +1328,7 @@ def get_executive_dashboard(user_id: str) -> dict:
 
     # Investigation count
     c.execute('''
-        SELECT COUNT(*) FROM investigation_log WHERE user_id = ?
+        SELECT COUNT(*) FROM investigation_log WHERE user_id = %s
     ''', (user_id,))
     inv_count = c.fetchone()[0] or 0
 
@@ -1368,7 +1368,7 @@ async def analyze_vendor(user_id: str, vendor_name: str) -> dict:
         SELECT item_description, unit_price, total_amount,
                transaction_date, invoice_number, division
         FROM vendor_transactions
-        WHERE user_id = ? AND vendor_name LIKE ?
+        WHERE user_id = %s AND vendor_name LIKE %s
         ORDER BY transaction_date DESC
     ''', (user_id, f'%{vendor_name}%'))
     transactions = c.fetchall()
@@ -1377,7 +1377,7 @@ async def analyze_vendor(user_id: str, vendor_name: str) -> dict:
         SELECT risk_level, risk_score, flags, total_amount,
                total_transactions, reliability_score, npwp, address
         FROM vendor_profiles
-        WHERE user_id = ? AND vendor_name LIKE ?
+        WHERE user_id = %s AND vendor_name LIKE %s
     ''', (user_id, f'%{vendor_name}%'))
     profile = c.fetchone()
     conn.close()
@@ -1484,7 +1484,7 @@ def _save_vendor_transaction(user_id: str, vendor_name: str,
             (user_id, vendor_name, item_description, unit_price,
              quantity, total_amount, category, invoice_number,
              division, approved_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, vendor_name, item_description, unit_price,
               quantity, total_amount, category, invoice_number,
               division, approved_by))
@@ -1501,7 +1501,7 @@ def _get_vendor_price_history(user_id: str, item_description: str) -> list:
         c.execute('''
             SELECT unit_price, transaction_date, vendor_name
             FROM vendor_transactions
-            WHERE user_id = ? AND item_description LIKE ?
+            WHERE user_id = %s AND item_description LIKE %s
             ORDER BY transaction_date DESC LIMIT 20
         ''', (user_id, f'%{item_description[:20]}%'))
         rows = c.fetchall()
@@ -1519,7 +1519,7 @@ def _get_market_reference(item_name: str, category: str) -> dict:
         c.execute('''
             SELECT min_price, max_price, avg_price, unit
             FROM market_price_reference
-            WHERE item_name LIKE ? OR category = ?
+            WHERE item_name LIKE %s OR category = %s
             LIMIT 1
         ''', (f'%{item_name[:15]}%', category))
         row = c.fetchone()
@@ -1541,7 +1541,7 @@ def _get_division_price_comparison(user_id: str, item_description: str) -> list:
                    MIN(unit_price) as min_price, MAX(unit_price) as max_price,
                    COUNT(*) as count
             FROM vendor_transactions
-            WHERE user_id = ? AND item_description LIKE ?
+            WHERE user_id = %s AND item_description LIKE %s
             AND division != ''
             GROUP BY division
         ''', (user_id, f'%{item_description[:20]}%'))
@@ -1567,15 +1567,15 @@ def _update_vendor_profile(user_id: str, vendor_name: str,
             INSERT INTO vendor_profiles
             (user_id, vendor_name, total_transactions, total_amount,
              avg_transaction, risk_score, risk_level, last_transaction, updated_at)
-            VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, 1, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(user_id, vendor_name) DO UPDATE SET
                 total_transactions = total_transactions + 1,
-                total_amount = total_amount + ?,
-                avg_transaction = (total_amount + ?) / (total_transactions + 1),
-                risk_score = MAX(risk_score, ?),
-                risk_level = ?,
-                last_transaction = ?,
-                updated_at = ?
+                total_amount = total_amount + %s,
+                avg_transaction = (total_amount + %s) / (total_transactions + 1),
+                risk_score = MAX(risk_score, %s),
+                risk_level = %s,
+                last_transaction = %s,
+                updated_at = %s
         ''', (user_id, vendor_name, transaction_amount, transaction_amount,
               risk_score, risk_level, now, now,
               transaction_amount, transaction_amount,
@@ -1597,7 +1597,7 @@ def _create_risk_alert(user_id: str, alert_type: str, severity: str,
             INSERT INTO risk_alerts
             (user_id, alert_type, severity, vendor_name,
              description, amount, risk_score, confidence_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, alert_type, severity, vendor_name,
               description, amount, risk_score, confidence_score))
         conn.commit()
@@ -1618,7 +1618,7 @@ def _log_compliance_event(user_id: str, event_type: str,
             INSERT INTO compliance_audit_trail
             (user_id, event_type, entity_name, amount, description,
              policy_violated, severity, approved_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ''', (user_id, event_type, entity_name, amount, description,
               policy_violated, severity, approved_by))
         conn.commit()
@@ -1636,7 +1636,7 @@ def get_risk_alerts(user_id: str, status: str = 'open') -> list:
                    description, amount, risk_score,
                    confidence_score, created_at
             FROM risk_alerts
-            WHERE user_id = ? AND status = ?
+            WHERE user_id = %s AND status = %s
             ORDER BY risk_score DESC, created_at DESC
         ''', (user_id, status))
         rows = c.fetchall()
@@ -1657,7 +1657,7 @@ def resolve_alert(alert_id: int, user_id: str):
         c = conn.cursor()
         c.execute('''
             UPDATE risk_alerts SET status = 'resolved',
-            resolved_at = ? WHERE id = ? AND user_id = ?
+            resolved_at = %s WHERE id = %s AND user_id = %s
         ''', (datetime.now().isoformat(), alert_id, user_id))
         conn.commit()
         conn.close()
