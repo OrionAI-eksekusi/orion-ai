@@ -397,7 +397,7 @@ async def add_market_price(request: Request):
         if secret != "orion-admin-2026":
             return {"status": "error", "message": "Unauthorized"}
         import sqlite3
-        from app.services.database_service import DB_PATH
+        from app.services.database_service import get_connection, DB_PATH
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
@@ -424,7 +424,7 @@ async def list_market_prices(category: str = ""):
     """List semua data harga pasar"""
     try:
         import sqlite3
-        from app.services.database_service import DB_PATH
+        from app.services.database_service import get_connection, DB_PATH
         conn, _db_type = get_connection()
         c = conn.cursor()
         if category:

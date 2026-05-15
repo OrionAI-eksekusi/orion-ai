@@ -1,3 +1,4 @@
+from app.services.database_service import get_connection, DB_PATH
 """
 ZENITH — Enterprise Risk Intelligence System
 AI Governance & Forensic Audit Platform

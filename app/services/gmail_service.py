@@ -122,7 +122,7 @@ def _get_valid_creds() -> Credentials:
 def _get_user_creds(user_id: str) -> Credentials:
     """Ambil credentials untuk user tertentu — multi-user support"""
     try:
-        from app.services.database_service import get_user_gmail_token
+        from app.services.database_service import get_connection, get_user_gmail_token
         user_token = get_user_gmail_token(user_id)
         if user_token and user_token.get('access_token'):
             # Ambil client_id dan client_secret dari env

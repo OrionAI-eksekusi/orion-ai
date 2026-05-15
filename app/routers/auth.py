@@ -51,7 +51,7 @@ async def google_callback(code: str, state: str = "default"):
 
         # Simpan token ke database
         if access_token:
-            from app.services.database_service import save_user_gmail_token
+            from app.services.database_service import get_connection, save_user_gmail_token
             save_user_gmail_token(user_id, access_token, refresh_token)
 
         # Simpan refresh token ke gmail_service cache
@@ -64,7 +64,7 @@ async def google_callback(code: str, state: str = "default"):
                 "client_secret": GOOGLE_CLIENT_SECRET,
                 "scopes": SCOPES
             }
-            from app.services.database_service import DB_PATH
+            from app.services.database_service import get_connection, DB_PATH
             import sqlite3
             conn, _db_type = get_connection()
             c = conn.cursor()
