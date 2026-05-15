@@ -1254,11 +1254,7 @@ def verify_alert(alert_id: int, user_id: str,
             UPDATE risk_alerts SET
                 verified_by = ?,
                 verification_result = ?,
-                status = CASE 
-                    WHEN ? = 'FALSE_POSITIVE' THEN 'resolved'
-                    WHEN ? = 'CONFIRMED' THEN 'verified'
-                    ELSE 'verified'
-                END
+                status = 'verified'
             WHERE id = ? AND user_id = ?
         ''', (verified_by, result, result, result, alert_id, user_id))
         conn.commit()
