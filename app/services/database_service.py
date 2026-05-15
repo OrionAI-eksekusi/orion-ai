@@ -30,7 +30,7 @@ def init_db():
     # ── Tabel WA Messages ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS wa_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT DEFAULT 'default',
             phone TEXT NOT NULL,
             message TEXT NOT NULL,
@@ -45,7 +45,7 @@ def init_db():
     # ── Tabel User Profiles ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_profiles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT UNIQUE NOT NULL,
             name TEXT DEFAULT '',
             email TEXT DEFAULT '',
@@ -70,7 +70,7 @@ def init_db():
     # ── Tabel FCM Tokens ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS fcm_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             token TEXT UNIQUE NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -80,7 +80,7 @@ def init_db():
     # ── Tabel Personal Brain ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS personal_brain (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT DEFAULT 'default',
             entity_name TEXT NOT NULL,
             entity_type TEXT DEFAULT 'contact',
@@ -98,7 +98,7 @@ def init_db():
     # ── Tabel Follow Up Tracker ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS follow_up_tracker (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT DEFAULT 'default',
             contact_phone TEXT DEFAULT '',
             contact_email TEXT DEFAULT '',
