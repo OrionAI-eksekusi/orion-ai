@@ -295,7 +295,10 @@ def get_user_plan(user_id: str) -> dict:
     # Cek apakah masih dalam trial
     if trial_end:
         try:
-            trial_end_dt = datetime.fromisoformat(trial_end)
+            if hasattr(trial_end, 'isoformat'):
+                trial_end_dt = trial_end
+            else:
+                trial_end_dt = datetime.fromisoformat(str(trial_end))
             if now <= trial_end_dt:
                 is_trial = True
                 trial_days_left = (trial_end_dt - now).days + 1
