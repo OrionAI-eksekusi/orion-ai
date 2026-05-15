@@ -66,7 +66,7 @@ async def google_callback(code: str, state: str = "default"):
             }
             from app.services.database_service import DB_PATH
             import sqlite3
-            conn = sqlite3.connect(DB_PATH)
+            conn, _db_type = get_connection()
             c = conn.cursor()
             c.execute('''
                 CREATE TABLE IF NOT EXISTS user_gmail_tokens (

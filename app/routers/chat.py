@@ -246,7 +246,7 @@ async def health_check():
     db_status = False
     try:
         import sqlite3 as _sqlite3
-        conn = _sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         conn.execute("SELECT 1")
         conn.close()
         db_status = True
@@ -922,7 +922,7 @@ async def debug_db():
     import os, sqlite3
     from app.services.database_service import DB_PATH
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = [row[0] for row in c.fetchall()]

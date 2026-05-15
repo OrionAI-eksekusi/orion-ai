@@ -210,7 +210,7 @@ async def reset_zenith_data(user_id: str):
         import os
         DB_PATH = os.getenv("DB_PATH", "orion.db")
         init_zenith_db()
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute("DELETE FROM vendor_transactions WHERE user_id = ?", (user_id,))
         c.execute("DELETE FROM vendor_profiles WHERE user_id = ?", (user_id,))
@@ -398,7 +398,7 @@ async def add_market_price(request: Request):
             return {"status": "error", "message": "Unauthorized"}
         import sqlite3
         from app.services.database_service import DB_PATH
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             INSERT INTO market_price_reference 
@@ -425,7 +425,7 @@ async def list_market_prices(category: str = ""):
     try:
         import sqlite3
         from app.services.database_service import DB_PATH
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         if category:
             c.execute("SELECT * FROM market_price_reference WHERE category = ? ORDER BY item_name", (category,))

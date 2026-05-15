@@ -49,7 +49,7 @@ def _save_token_to_db(creds: Credentials):
             "client_secret": creds.client_secret,
             "scopes": list(creds.scopes) if creds.scopes else SCOPES
         }
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             CREATE TABLE IF NOT EXISTS gmail_tokens (
@@ -75,7 +75,7 @@ def _save_token_to_db(creds: Credentials):
 def _load_token_from_db() -> Credentials:
     try:
         DB_PATH = os.getenv("DB_PATH", "orion.db")
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute("SELECT token_json FROM gmail_tokens WHERE id = 1")
         row = c.fetchone()

@@ -8,7 +8,7 @@ DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 def init_payment_db():
     """Inisialisasi tabel payment/invoice"""
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     c.execute('''
@@ -50,7 +50,7 @@ def create_invoice(
     if not user_id or user_id.strip() == "" or user_id == "default":
         raise ValueError("user_id tidak valid. User harus login dulu.")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     invoice_number = f"INV-{datetime.now().strftime('%Y%m%d%H%M%S')}{user_id[:4].upper()}"
@@ -81,7 +81,7 @@ def get_invoice_by_number(invoice_number: str, user_id: str) -> dict:
     """Ambil 1 invoice by nomor invoice"""
     if not user_id or user_id == "default":
         return {}
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
         SELECT invoice_number, customer_name, customer_phone,
@@ -111,7 +111,7 @@ def get_unpaid_invoices(user_id: str) -> list:
     """Ambil invoice yang belum dibayar"""
     if not user_id or user_id == "default":
         return []
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
         SELECT invoice_number, customer_name, customer_phone,
@@ -143,7 +143,7 @@ def get_due_invoices(user_id: str) -> list:
     if not user_id or user_id == "default":
         return []
     today = datetime.now().strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
         SELECT invoice_number, customer_name, customer_phone,
@@ -174,7 +174,7 @@ def mark_invoice_paid(invoice_number: str, user_id: str) -> bool:
     if not user_id or user_id == "default":
         return False
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             UPDATE invoices SET
@@ -197,7 +197,7 @@ def increment_reminder_count(invoice_number: str, user_id: str):
     """Increment reminder count"""
     if not user_id or user_id == "default":
         return
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
         UPDATE invoices SET
@@ -213,7 +213,7 @@ def get_all_invoices(user_id: str) -> list:
     """Ambil semua invoice milik user"""
     if not user_id or user_id == "default":
         return []
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
         SELECT invoice_number, customer_name, customer_phone,

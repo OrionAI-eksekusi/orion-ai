@@ -18,7 +18,7 @@ DB_PATH = os.getenv("DB_PATH", "orion.db")
 # ── Init Zenith DB ────────────────────────────────────────
 def init_zenith_db():
     seed_market_prices()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     c.execute('''
@@ -358,7 +358,7 @@ ANALISA TRANSAKSI:
 
 async def detect_transaction_anomalies(user_id: str) -> dict:
     init_zenith_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     c.execute('''
@@ -543,7 +543,7 @@ async def ai_investigator(user_id: str, question: str) -> dict:
     Jawab pertanyaan investigasi dengan data nyata, bukan opini
     """
     init_zenith_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     # Tarik semua data untuk konteks investigasi
@@ -713,7 +713,7 @@ Lakukan investigasi forensik berdasarkan data di atas.
         result = json.loads(clean)
 
         # Log investigasi ke database
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             INSERT INTO investigation_log
@@ -1007,7 +1007,7 @@ async def procurement_watch(user_id: str) -> dict:
     Deteksi pembelian tidak efisien dan inkonsistensi harga antar divisi
     """
     init_zenith_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     # Harga per item per divisi
@@ -1146,7 +1146,7 @@ def get_compliance_report(user_id: str) -> dict:
     Compliance Center — Audit trail dan policy violation
     """
     init_zenith_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     # Audit trail
@@ -1248,7 +1248,7 @@ def verify_alert(alert_id: int, user_id: str,
                  verified_by: str, result: str) -> dict:
     """User feedback loop — verifikasi hasil AI"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             UPDATE risk_alerts SET
@@ -1280,7 +1280,7 @@ def verify_alert(alert_id: int, user_id: str,
 
 def get_executive_dashboard(user_id: str) -> dict:
     init_zenith_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     c.execute('''
@@ -1360,7 +1360,7 @@ def get_executive_dashboard(user_id: str) -> dict:
 
 async def analyze_vendor(user_id: str, vendor_name: str) -> dict:
     init_zenith_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     c.execute('''
@@ -1476,7 +1476,7 @@ def _save_vendor_transaction(user_id: str, vendor_name: str,
                               division: str = "",
                               approved_by: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             INSERT INTO vendor_transactions
@@ -1495,7 +1495,7 @@ def _save_vendor_transaction(user_id: str, vendor_name: str,
 
 def _get_vendor_price_history(user_id: str, item_description: str) -> list:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT unit_price, transaction_date, vendor_name
@@ -1513,7 +1513,7 @@ def _get_vendor_price_history(user_id: str, item_description: str) -> list:
 
 def _get_market_reference(item_name: str, category: str) -> dict:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT min_price, max_price, avg_price, unit
@@ -1533,7 +1533,7 @@ def _get_market_reference(item_name: str, category: str) -> dict:
 
 def _get_division_price_comparison(user_id: str, item_description: str) -> list:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT division, AVG(unit_price) as avg_price,
@@ -1556,7 +1556,7 @@ def _get_division_price_comparison(user_id: str, item_description: str) -> list:
 def _update_vendor_profile(user_id: str, vendor_name: str,
                             transaction_amount: float, risk_score: float):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         now = datetime.now().isoformat()
         risk_level = 'HIGH' if risk_score >= 70 else \
@@ -1590,7 +1590,7 @@ def _create_risk_alert(user_id: str, alert_type: str, severity: str,
                         amount: float, risk_score: float,
                         confidence_score: str = "MEDIUM"):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             INSERT INTO risk_alerts
@@ -1611,7 +1611,7 @@ def _log_compliance_event(user_id: str, event_type: str,
                            approved_by: str = "",
                            policy_violated: str = ""):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             INSERT INTO compliance_audit_trail
@@ -1628,7 +1628,7 @@ def _log_compliance_event(user_id: str, event_type: str,
 
 def get_risk_alerts(user_id: str, status: str = 'open') -> list:
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT id, alert_type, severity, vendor_name,
@@ -1652,7 +1652,7 @@ def get_risk_alerts(user_id: str, status: str = 'open') -> list:
 
 def resolve_alert(alert_id: int, user_id: str):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             UPDATE risk_alerts SET status = 'resolved',
@@ -1666,7 +1666,7 @@ def resolve_alert(alert_id: int, user_id: str):
 def seed_market_prices():
     """Isi data harga pasar referensi Indonesia"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         
         prices = [
