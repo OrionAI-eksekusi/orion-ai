@@ -702,3 +702,27 @@ def get_user_gmail_token(user_id: str) -> dict:
     except Exception as e:
         print(f"[DB] Get gmail token error: {e}")
         return {}
+
+
+def extend_trial(user_id: str, days: int = 30):
+    """Extend trial user"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            UPDATE user_plans 
+            SET trial_end_date = date(trial_end_date, ? || ' days'),
+                plan = 'trial'
+            WHERE user_id = ?
+        ''', (f'+{days}', user_id))
+        if c.rowcount == 0:
+            c.execute('''
+                INSERT INTO user_plans (user_id, plan, trial_end_date, daily_commands, last_reset_date)
+                VALUES (?, 'trial', date('now', ? || ' days'), 0, date('now'))
+            ''', (user_id, f'+{days}'))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[DB] Extend trial error: {e}")
+        return False

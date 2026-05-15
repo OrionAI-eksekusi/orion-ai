@@ -900,3 +900,18 @@ async def whatsapp_webhook(request: Request):
     except Exception as e:
         print(f"[WEBHOOK ERROR] {e}")
         return {"status": "ok"}  # Selalu return ok agar WA tidak retry
+
+@router.post("/admin/extend-trial")
+async def extend_trial_endpoint(request: Request):
+    try:
+        body = await request.json()
+        user_id = body.get("user_id")
+        days = body.get("days", 30)
+        secret = body.get("secret", "")
+        if secret != "orion-admin-2026":
+            return {"status": "error", "message": "Unauthorized"}
+        from app.services.database_service import extend_trial
+        result = extend_trial(user_id, days)
+        return {"status": "success" if result else "error", "user_id": user_id, "days": days}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
