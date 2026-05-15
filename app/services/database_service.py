@@ -1,19 +1,5 @@
 import sqlite3
 import os
-
-def get_connection():
-    """Ambil koneksi database — PostgreSQL kalau ada, SQLite kalau tidak"""
-    database_url = os.getenv("DATABASE_URL", "")
-    if database_url and database_url.startswith("postgresql"):
-        import psycopg2
-        conn = psycopg2.connect(database_url)
-        conn.autocommit = False
-        return conn, "postgres"
-    else:
-        conn, db_type = get_connection()
-        return conn, "sqlite"
-
-import os
 import json
 from datetime import datetime, timedelta
 
@@ -23,7 +9,7 @@ def init_db():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     # ── Tabel WA Messages ──
@@ -151,7 +137,7 @@ def init_db():
 
 def save_user_profile(user_id: str, name: str, email: str, phone: str,
                        city: str = "Jakarta", briefing_hour: int = 6):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         INSERT INTO user_profiles (user_id, name, email, phone, city, briefing_hour, updated_at)
@@ -171,12 +157,12 @@ def save_user_profile(user_id: str, name: str, email: str, phone: str,
 
 
 def get_user_profile(user_id: str) -> dict:
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token,
                plan, trial_start, trial_end, daily_commands, total_commands
-        FROM user_profiles WHERE user_id = %s
+        FROM user_profiles WHERE user_id = ?
     ''', (user_id,))
     row = c.fetchone()
     conn.close()
@@ -192,7 +178,7 @@ def get_user_profile(user_id: str) -> dict:
 
 
 def get_all_active_users() -> list:
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token
@@ -208,22 +194,22 @@ def get_all_active_users() -> list:
 
 
 def update_user_fcm_token(user_id: str, fcm_token: str):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        UPDATE user_profiles SET fcm_token = %s, updated_at = %s
-        WHERE user_id = %s
+        UPDATE user_profiles SET fcm_token = ?, updated_at = ?
+        WHERE user_id = ?
     ''', (fcm_token, datetime.now().isoformat(), user_id))
     conn.commit()
     conn.close()
 
 
 def update_user_gmail_token(user_id: str, gmail_token: str):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
-        UPDATE user_profiles SET gmail_token = %s, updated_at = %s
-        WHERE user_id = %s
+        UPDATE user_profiles SET gmail_token = ?, updated_at = ?
+        WHERE user_id = ?
     ''', (gmail_token, datetime.now().isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -233,11 +219,11 @@ def update_user_gmail_token(user_id: str, gmail_token: str):
 
 def init_user_plan(user_id: str):
     """Set trial 3 hari saat user pertama kali daftar"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     # Cek apakah sudah punya trial
-    c.execute("SELECT trial_start FROM user_profiles WHERE user_id = %s", (user_id,))
+    c.execute("SELECT trial_start FROM user_profiles WHERE user_id = ?", (user_id,))
     row = c.fetchone()
 
     if row and row[0]:
@@ -250,10 +236,10 @@ def init_user_plan(user_id: str):
     c.execute('''
         UPDATE user_profiles SET
             plan = 'trial',
-            trial_start = %s,
-            trial_end = %s,
-            updated_at = %s
-        WHERE user_id = %s
+            trial_start = ?,
+            trial_end = ?,
+            updated_at = ?
+        WHERE user_id = ?
     ''', (now.isoformat(), trial_end.isoformat(), now.isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -262,11 +248,11 @@ def init_user_plan(user_id: str):
 
 def get_user_plan(user_id: str) -> dict:
     """Ambil info plan user — trial/free/apex/zenith"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT plan, trial_start, trial_end, daily_commands, daily_reset_date, total_commands
-        FROM user_profiles WHERE user_id = %s
+        FROM user_profiles WHERE user_id = ?
     ''', (user_id,))
     row = c.fetchone()
     conn.close()
@@ -336,7 +322,7 @@ def get_user_plan(user_id: str) -> dict:
 def _set_plan(user_id: str, plan: str):
     """Internal: update plan di DB"""
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute(
             "UPDATE user_profiles SET plan = ?, updated_at = ? WHERE user_id = ?",
@@ -351,14 +337,14 @@ def _set_plan(user_id: str, plan: str):
 def _reset_daily_commands(user_id: str, today: str):
     """Reset counter harian tiap tengah malam"""
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''
             UPDATE user_profiles SET
                 daily_commands = 0,
-                daily_reset_date = %s,
-                updated_at = %s
-            WHERE user_id = %s
+                daily_reset_date = ?,
+                updated_at = ?
+            WHERE user_id = ?
         ''', (today, datetime.now().isoformat(), user_id))
         conn.commit()
         conn.close()
@@ -369,16 +355,16 @@ def _reset_daily_commands(user_id: str, today: str):
 def increment_daily_commands(user_id: str):
     """Tambah counter perintah harian + total"""
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         today = datetime.now().strftime("%Y-%m-%d")
         c.execute('''
             UPDATE user_profiles SET
                 daily_commands = daily_commands + 1,
                 total_commands = total_commands + 1,
-                daily_reset_date = %s,
-                updated_at = %s
-            WHERE user_id = %s
+                daily_reset_date = ?,
+                updated_at = ?
+            WHERE user_id = ?
         ''', (today, datetime.now().isoformat(), user_id))
         conn.commit()
         conn.close()
@@ -388,13 +374,13 @@ def increment_daily_commands(user_id: str):
 
 def upgrade_user_plan(user_id: str, plan: str):
     """Upgrade plan user ke apex/zenith"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         UPDATE user_profiles SET
-            plan = %s,
-            updated_at = %s
-        WHERE user_id = %s
+            plan = ?,
+            updated_at = ?
+        WHERE user_id = ?
     ''', (plan, datetime.now().isoformat(), user_id))
     conn.commit()
     conn.close()
@@ -404,7 +390,7 @@ def upgrade_user_plan(user_id: str, plan: str):
 # ── WA Message Functions ───────────────────────────────
 
 def save_wa_message(phone: str, message: str, user_id: str = 'default'):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
         "INSERT INTO wa_messages (user_id, phone, message, received_at, received_timestamp) VALUES (?, ?, ?, ?, ?)",
@@ -415,7 +401,7 @@ def save_wa_message(phone: str, message: str, user_id: str = 'default'):
 
 
 def get_wa_messages(limit=10, user_id: str = 'default'):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
         "SELECT phone, message, received_at, replied FROM wa_messages WHERE user_id=? ORDER BY id DESC LIMIT ?",
@@ -427,7 +413,7 @@ def get_wa_messages(limit=10, user_id: str = 'default'):
 
 
 def mark_replied(phone: str, user_id: str = 'default'):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
         "UPDATE wa_messages SET replied=1 WHERE phone=? AND user_id=? AND replied=0",
@@ -439,12 +425,12 @@ def mark_replied(phone: str, user_id: str = 'default'):
 
 def get_unreplied_messages(hours: int = 24, user_id: str = 'default'):
     """Ambil pesan belum dibalas — max follow up 2x"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT DISTINCT phone, message, received_timestamp, follow_up_count
         FROM wa_messages
-        WHERE user_id = %s
+        WHERE user_id = ?
         AND replied = 0
         AND follow_up_count < 2
         AND received_timestamp IS NOT NULL
@@ -458,13 +444,13 @@ def get_unreplied_messages(hours: int = 24, user_id: str = 'default'):
 
 def mark_follow_up_sent(phone: str, user_id: str = 'default'):
     """Tandai follow up terkirim — increment counter"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         UPDATE wa_messages
         SET follow_up_sent=1,
             follow_up_count=follow_up_count+1
-        WHERE phone=%s AND user_id=%s AND replied=0
+        WHERE phone=? AND user_id=? AND replied=0
     ''', (phone, user_id))
     conn.commit()
     conn.close()
@@ -473,7 +459,7 @@ def mark_follow_up_sent(phone: str, user_id: str = 'default'):
 def get_follow_up_count(phone: str, user_id: str = 'default') -> int:
     """Cek sudah berapa kali follow up ke nomor ini"""
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''
             SELECT MAX(follow_up_count) FROM wa_messages
@@ -492,7 +478,7 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
                       entity_type: str = 'contact', details: dict = {},
                       follow_up_date: str = ''):
     """Simpan atau update entri di Personal Brain"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         INSERT INTO personal_brain
@@ -518,13 +504,13 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
 
 def get_brain_entry(user_id: str, entity_name: str) -> dict:
     """Cari entri di Personal Brain"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT entity_name, entity_type, notes, details,
                follow_up_date, follow_up_count, last_contact, created_at
         FROM personal_brain
-        WHERE user_id = %s AND entity_name LIKE %s
+        WHERE user_id = ? AND entity_name LIKE ?
         ORDER BY updated_at DESC LIMIT 1
     ''', (user_id, f'%{entity_name}%'))
     row = c.fetchone()
@@ -541,13 +527,13 @@ def get_brain_entry(user_id: str, entity_name: str) -> dict:
 
 def get_all_brain_entries(user_id: str) -> list:
     """Ambil semua entri Personal Brain"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT entity_name, entity_type, notes, follow_up_date,
                follow_up_done, last_contact, updated_at
         FROM personal_brain
-        WHERE user_id = %s
+        WHERE user_id = ?
         ORDER BY updated_at DESC
     ''', (user_id,))
     rows = c.fetchall()
@@ -562,15 +548,15 @@ def get_all_brain_entries(user_id: str) -> list:
 def get_pending_follow_ups(user_id: str) -> list:
     """Ambil follow up yang sudah jatuh tempo"""
     today = datetime.now().strftime("%Y-%m-%d")
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
         FROM personal_brain
-        WHERE user_id = %s
+        WHERE user_id = ?
         AND follow_up_done = 0
         AND follow_up_date != ''
-        AND follow_up_date <= %s
+        AND follow_up_date <= ?
         AND follow_up_count < 2
         ORDER BY follow_up_date ASC
     ''', (user_id, today))
@@ -584,15 +570,15 @@ def get_pending_follow_ups(user_id: str) -> list:
 
 def mark_brain_follow_up_done(user_id: str, entity_name: str):
     """Tandai follow up selesai"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         UPDATE personal_brain SET
             follow_up_done = 1,
             follow_up_count = follow_up_count + 1,
-            last_contact = %s,
-            updated_at = %s
-        WHERE user_id = %s AND entity_name = %s
+            last_contact = ?,
+            updated_at = ?
+        WHERE user_id = ? AND entity_name = ?
     ''', (datetime.now().isoformat(), datetime.now().isoformat(),
           user_id, entity_name))
     conn.commit()
@@ -606,16 +592,16 @@ def mark_brain_follow_up_sent(user_id: str, entity_name: str):
 
 def search_brain(user_id: str, query: str) -> list:
     """Cari di Personal Brain"""
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         SELECT entity_name, entity_type, notes, follow_up_date,
                follow_up_done, last_contact
         FROM personal_brain
-        WHERE user_id = %s AND (
-            entity_name LIKE %s OR
-            notes LIKE %s OR
-            entity_type LIKE %s
+        WHERE user_id = ? AND (
+            entity_name LIKE ? OR
+            notes LIKE ? OR
+            entity_type LIKE ?
         )
         ORDER BY updated_at DESC LIMIT 10
     ''', (user_id, f'%{query}%', f'%{query}%', f'%{query}%'))
@@ -638,7 +624,7 @@ def json_dumps(data: dict) -> str:
 # ── FCM Token Functions ────────────────────────────────
 
 def save_fcm_token_db(token: str, user_id: str = 'default'):
-    conn, db_type = get_connection()
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS fcm_tokens
@@ -659,7 +645,7 @@ def save_fcm_token_db(token: str, user_id: str = 'default'):
 
 def get_fcm_token_db(user_id: str = 'default') -> str:
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute(
             "SELECT token FROM fcm_tokens WHERE user_id=? ORDER BY id DESC LIMIT 1",
@@ -674,7 +660,7 @@ def get_fcm_token_db(user_id: str = 'default') -> str:
 def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
     """Simpan Gmail OAuth token per user"""
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''
             CREATE TABLE IF NOT EXISTS user_gmail_tokens (
@@ -702,11 +688,11 @@ def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
 def get_user_gmail_token(user_id: str) -> dict:
     """Ambil Gmail token user"""
     try:
-        conn, db_type = get_connection()
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''
             SELECT access_token, id_token, updated_at
-            FROM user_gmail_tokens WHERE user_id = %s
+            FROM user_gmail_tokens WHERE user_id = ?
         ''', (user_id,))
         row = c.fetchone()
         conn.close()
