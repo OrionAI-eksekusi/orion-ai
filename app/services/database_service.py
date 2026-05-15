@@ -727,14 +727,11 @@ def extend_trial(user_id: str, days: int = 30):
         conn, _db_type = get_connection()
         c = conn.cursor()
         # Cek kolom yang ada
-        c.execute("PRAGMA table_info(user_plans)")
-        cols = [row[1] for row in c.fetchall()]
-        print(f"[DB] Columns: {cols}")
-        
         from datetime import datetime, timedelta
         new_end = (datetime.now() + timedelta(days=days)).isoformat()
         c.execute("UPDATE user_profiles SET trial_end = %s, plan = 'trial', updated_at = %s WHERE user_id = %s", 
                   (new_end, datetime.now().isoformat(), user_id))
+        print(f"[DB] Rows updated: {c.rowcount}")
         
         print(f"[DB] Rows updated: {c.rowcount}")
         conn.commit()
