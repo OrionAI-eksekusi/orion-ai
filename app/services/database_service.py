@@ -73,7 +73,7 @@ def init_db():
             id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             token TEXT UNIQUE NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
@@ -644,7 +644,7 @@ def save_fcm_token_db(token: str, user_id: str = 'default'):
     c.execute('''
         CREATE TABLE IF NOT EXISTS fcm_tokens
         (id INTEGER PRIMARY KEY, user_id TEXT, token TEXT UNIQUE,
-         created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+         created_at TIMESTAMP DEFAULT NOW())
     ''')
     c.execute(
         "INSERT OR REPLACE INTO fcm_tokens (user_id, token) VALUES (?, ?)",
