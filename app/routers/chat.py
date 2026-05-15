@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from app.services.ai_service import process_command, generate_briefing, extract_tasks, generate_wa_reply
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message, broadcast_whatsapp
-from app.services.database_service import get_connection, (
+from app.services.database_service import get_connection, DB_PATH
     init_db, get_wa_messages, mark_replied,
     save_user_profile, get_user_profile, get_all_active_users,
     save_fcm_token_db, get_fcm_token_db, update_user_fcm_token,
@@ -297,7 +297,6 @@ async def save_user_profile_endpoint(request: SaveUserProfileRequest):
             briefing_hour=request.briefing_hour
         )
         if request.gmail_access_token:
-            from app.services.database_service import get_connection, save_user_gmail_token
             save_user_gmail_token(
                 user_id=request.user_id,
                 access_token=request.gmail_access_token,
@@ -910,7 +909,6 @@ async def extend_trial_endpoint(request: Request):
         secret = body.get("secret", "")
         if secret != "orion-admin-2026":
             return {"status": "error", "message": "Unauthorized"}
-        from app.services.database_service import get_connection, extend_trial
         result = extend_trial(user_id, days)
         return {"status": "success" if result else "error", "user_id": user_id, "days": days}
     except Exception as e:
@@ -920,7 +918,6 @@ async def extend_trial_endpoint(request: Request):
 @router.get("/admin/debug-db")
 async def debug_db():
     import os, sqlite3
-    from app.services.database_service import get_connection, DB_PATH
     try:
         conn, _db_type = get_connection()
         c = conn.cursor()
@@ -939,7 +936,6 @@ async def init_db_endpoint(request: Request):
         secret = body.get("secret", "")
         if secret != "orion-admin-2026":
             return {"status": "error", "message": "Unauthorized"}
-        from app.services.database_service import get_connection, init_db
         init_db()
         from app.services.zenith_service import init_zenith_db
         init_zenith_db()
