@@ -1,3 +1,4 @@
+from app.services.database_service import get_connection, DB_PATH
 import sqlite3
 import os
 import re
@@ -15,7 +16,7 @@ MAX_HISTORY = 20
 # ─────────────────────────────────────────────
 
 def init_memory_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
 
     # ── Customer Memory (WA) ──
@@ -133,7 +134,7 @@ def extract_name_from_message(message: str) -> str:
 def get_customer_memory(phone: str):
     if not is_valid_phone(phone):
         return None
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM customer_memory WHERE phone=?", (phone,))
     row = c.fetchone()
@@ -162,7 +163,7 @@ def update_customer_memory(phone: str, message: str, reply: str):
         return
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     extracted_name = extract_name_from_message(message)
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     c = conn.cursor()
     try:
@@ -203,7 +204,7 @@ def update_customer_name(phone: str, name: str):
     clean_name = sanitize_name(name)
     if not clean_name:
         return
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute("UPDATE customer_memory SET name=? WHERE phone=?", (clean_name, phone))
     conn.commit()
@@ -211,7 +212,7 @@ def update_customer_name(phone: str, name: str):
 
 
 def get_all_customers(limit=50):
-    conn = sqlite3.connect(DB_PATH)
+    conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute('''
         SELECT phone, name, first_seen, last_seen, message_count, notes
@@ -267,7 +268,7 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
                       follow_up_date: str = '') -> bool:
     """Simpan atau update entri di Personal Brain"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         now = datetime.now().isoformat()
 
@@ -313,7 +314,7 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
 def get_brain_entry(user_id: str, entity_name: str) -> dict:
     """Cari entri di Personal Brain"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT entity_name, entity_type, notes, details,
@@ -341,7 +342,7 @@ def get_brain_entry(user_id: str, entity_name: str) -> dict:
 def get_all_brain_entries(user_id: str) -> list:
     """Ambil semua entri Personal Brain"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT entity_name, entity_type, notes, follow_up_date,
@@ -366,7 +367,7 @@ def get_pending_follow_ups(user_id: str) -> list:
     """Ambil follow up yang sudah jatuh tempo — max 2x"""
     try:
         today = datetime.now().strftime("%Y-%m-%d")
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
@@ -392,7 +393,7 @@ def get_pending_follow_ups(user_id: str) -> list:
 def mark_brain_follow_up_sent(user_id: str, entity_name: str):
     """Increment follow up count — kalau sudah 2x → done"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             UPDATE personal_brain SET
@@ -412,7 +413,7 @@ def mark_brain_follow_up_sent(user_id: str, entity_name: str):
 def search_brain(user_id: str, keyword: str) -> list:
     """Cari di Personal Brain berdasarkan keyword"""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
             SELECT entity_name, entity_type, notes, follow_up_date, updated_at
