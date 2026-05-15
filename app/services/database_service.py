@@ -34,7 +34,7 @@ def init_db():
             user_id TEXT DEFAULT 'default',
             phone TEXT NOT NULL,
             message TEXT NOT NULL,
-            received_at TEXT NOT NULL,
+            received_at TIMESTAMP NOT NULL,
             replied INTEGER DEFAULT 0,
             follow_up_sent INTEGER DEFAULT 0,
             follow_up_count INTEGER DEFAULT 0,
@@ -57,13 +57,13 @@ def init_db():
             timezone TEXT DEFAULT 'Asia/Jakarta',
             is_active INTEGER DEFAULT 1,
             plan TEXT DEFAULT 'trial',
-            trial_start TEXT DEFAULT '',
-            trial_end TEXT DEFAULT '',
+            trial_start TIMESTAMP DEFAULT '',
+            trial_end TIMESTAMP DEFAULT '',
             daily_commands INTEGER DEFAULT 0,
-            daily_reset_date TEXT DEFAULT '',
+            daily_reset_date TIMESTAMP DEFAULT '',
             total_commands INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (NOW()),
-            updated_at TEXT DEFAULT (NOW())
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
@@ -90,8 +90,8 @@ def init_db():
             follow_up_done INTEGER DEFAULT 0,
             follow_up_count INTEGER DEFAULT 0,
             last_contact TEXT DEFAULT '',
-            created_at TEXT DEFAULT (NOW()),
-            updated_at TEXT DEFAULT (NOW())
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
@@ -107,7 +107,7 @@ def init_db():
             follow_up_count INTEGER DEFAULT 0,
             last_follow_up TEXT DEFAULT '',
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (NOW())
+            created_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
@@ -127,10 +127,10 @@ def init_db():
     # ── Migrations User Profiles (plan system) ──
     plan_migrations = [
         "ALTER TABLE user_profiles ADD COLUMN plan TEXT DEFAULT 'trial'",
-        "ALTER TABLE user_profiles ADD COLUMN trial_start TEXT DEFAULT ''",
-        "ALTER TABLE user_profiles ADD COLUMN trial_end TEXT DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN trial_start TIMESTAMP DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN trial_end TIMESTAMP DEFAULT ''",
         "ALTER TABLE user_profiles ADD COLUMN daily_commands INTEGER DEFAULT 0",
-        "ALTER TABLE user_profiles ADD COLUMN daily_reset_date TEXT DEFAULT ''",
+        "ALTER TABLE user_profiles ADD COLUMN daily_reset_date TIMESTAMP DEFAULT ''",
         "ALTER TABLE user_profiles ADD COLUMN total_commands INTEGER DEFAULT 0",
     ]
     for m in plan_migrations:
@@ -682,7 +682,7 @@ def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
                 user_id TEXT PRIMARY KEY,
                 access_token TEXT NOT NULL,
                 id_token TEXT DEFAULT '',
-                updated_at TEXT DEFAULT (NOW())
+                updated_at TIMESTAMP DEFAULT NOW()
             )
         ''')
         c.execute('''
