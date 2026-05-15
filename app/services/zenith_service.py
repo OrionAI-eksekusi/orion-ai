@@ -23,7 +23,7 @@ def init_zenith_db():
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS vendor_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             vendor_name TEXT NOT NULL,
             item_description TEXT NOT NULL,
@@ -31,18 +31,18 @@ def init_zenith_db():
             quantity REAL DEFAULT 1,
             total_amount REAL NOT NULL,
             invoice_number TEXT DEFAULT '',
-            transaction_date TEXT DEFAULT (datetime('now')),
+            transaction_date TIMESTAMP DEFAULT NOW(),
             category TEXT DEFAULT 'general',
             payment_date TEXT DEFAULT '',
             approved_by TEXT DEFAULT '',
             division TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS market_price_reference (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             item_name TEXT NOT NULL,
             category TEXT DEFAULT 'general',
             min_price REAL NOT NULL,
@@ -50,13 +50,13 @@ def init_zenith_db():
             avg_price REAL NOT NULL,
             unit TEXT DEFAULT 'unit',
             source TEXT DEFAULT 'manual',
-            updated_at TEXT DEFAULT (datetime('now'))
+            updated_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS risk_alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             alert_type TEXT NOT NULL,
             severity TEXT NOT NULL,
@@ -68,14 +68,14 @@ def init_zenith_db():
             status TEXT DEFAULT 'open',
             verified_by TEXT DEFAULT '',
             verification_result TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now')),
-            resolved_at TEXT DEFAULT ''
+            created_at TIMESTAMP DEFAULT NOW(),
+            resolved_at TIMESTAMP DEFAULT ''
         )
     ''')
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS vendor_profiles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             vendor_name TEXT NOT NULL,
             total_transactions INTEGER DEFAULT 0,
@@ -88,15 +88,15 @@ def init_zenith_db():
             address TEXT DEFAULT '',
             reliability_score REAL DEFAULT 50,
             last_transaction TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now')),
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
             UNIQUE(user_id, vendor_name)
         )
     ''')
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS compliance_audit_trail (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             event_type TEXT NOT NULL,
             entity_name TEXT DEFAULT '',
@@ -105,19 +105,19 @@ def init_zenith_db():
             policy_violated TEXT DEFAULT '',
             severity TEXT DEFAULT 'INFO',
             approved_by TEXT DEFAULT '',
-            transaction_date TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now'))
+            transaction_date TIMESTAMP DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS investigation_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL,
             question TEXT NOT NULL,
             findings TEXT NOT NULL,
             confidence TEXT DEFAULT 'MEDIUM',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TIMESTAMP DEFAULT NOW()
         )
     ''')
 
