@@ -70,7 +70,7 @@ def init_zenith_db():
             verified_by TEXT DEFAULT '',
             verification_result TEXT DEFAULT '',
             created_at TIMESTAMP DEFAULT NOW(),
-            resolved_at TIMESTAMP DEFAULT ''
+            resolved_at TIMESTAMP
         )
     ''')
 
@@ -106,7 +106,7 @@ def init_zenith_db():
             policy_violated TEXT DEFAULT '',
             severity TEXT DEFAULT 'INFO',
             approved_by TEXT DEFAULT '',
-            transaction_date TIMESTAMP DEFAULT '',
+            transaction_date TIMESTAMP,
             created_at TIMESTAMP DEFAULT NOW()
         )
     ''')
