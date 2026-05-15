@@ -38,7 +38,7 @@ def init_db():
             replied INTEGER DEFAULT 0,
             follow_up_sent INTEGER DEFAULT 0,
             follow_up_count INTEGER DEFAULT 0,
-            received_timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+            received_timestamp TEXT NOT NULL DEFAULT (NOW())
         )
     ''')
 
@@ -62,8 +62,8 @@ def init_db():
             daily_commands INTEGER DEFAULT 0,
             daily_reset_date TEXT DEFAULT '',
             total_commands INTEGER DEFAULT 0,
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()),
+            updated_at TEXT DEFAULT (NOW())
         )
     ''')
 
@@ -90,8 +90,8 @@ def init_db():
             follow_up_done INTEGER DEFAULT 0,
             follow_up_count INTEGER DEFAULT 0,
             last_contact TEXT DEFAULT '',
-            created_at TEXT DEFAULT (datetime('now')),
-            updated_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW()),
+            updated_at TEXT DEFAULT (NOW())
         )
     ''')
 
@@ -107,7 +107,7 @@ def init_db():
             follow_up_count INTEGER DEFAULT 0,
             last_follow_up TEXT DEFAULT '',
             status TEXT DEFAULT 'pending',
-            created_at TEXT DEFAULT (datetime('now'))
+            created_at TEXT DEFAULT (NOW())
         )
     ''')
 
@@ -140,7 +140,7 @@ def init_db():
             pass
 
     try:
-        c.execute("UPDATE wa_messages SET received_timestamp = datetime('now') WHERE received_timestamp IS NULL")
+        c.execute("UPDATE wa_messages SET received_timestamp = NOW() WHERE received_timestamp IS NULL")
     except:
         pass
 
@@ -682,12 +682,12 @@ def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
                 user_id TEXT PRIMARY KEY,
                 access_token TEXT NOT NULL,
                 id_token TEXT DEFAULT '',
-                updated_at TEXT DEFAULT (datetime('now'))
+                updated_at TEXT DEFAULT (NOW())
             )
         ''')
         c.execute('''
             INSERT INTO user_gmail_tokens (user_id, access_token, id_token, updated_at)
-            VALUES (?, ?, ?, datetime('now'))
+            VALUES (?, ?, ?, NOW())
             ON CONFLICT(user_id) DO UPDATE SET
                 access_token = excluded.access_token,
                 id_token = excluded.id_token,
