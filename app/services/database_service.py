@@ -709,17 +709,17 @@ def extend_trial(user_id: str, days: int = 30):
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute('''
-            UPDATE user_plans 
-            SET trial_end_date = date(trial_end_date, ? || ' days'),
-                plan = 'trial'
-            WHERE user_id = ?
-        ''', (f'+{days}', user_id))
-        if c.rowcount == 0:
-            c.execute('''
-                INSERT INTO user_plans (user_id, plan, trial_end_date, daily_commands, last_reset_date)
-                VALUES (?, 'trial', date('now', ? || ' days'), 0, date('now'))
-            ''', (user_id, f'+{days}'))
+        # Cek kolom yang ada
+        c.execute("PRAGMA table_info(user_plans)")
+        cols = [row[1] for row in c.fetchall()]
+        print(f"[DB] Columns: {cols}")
+        
+        if 'trial_end_date' in cols:
+            c.execute(f"UPDATE user_plans SET trial_end_date = date('now', '+{days} days'), plan = 'trial' WHERE user_id = ?", (user_id,))
+        elif 'trial_end' in cols:
+            c.execute(f"UPDATE user_plans SET trial_end = datetime('now', '+{days} days'), plan = 'trial' WHERE user_id = ?", (user_id,))
+        
+        print(f"[DB] Rows updated: {c.rowcount}")
         conn.commit()
         conn.close()
         return True
