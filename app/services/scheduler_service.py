@@ -754,15 +754,15 @@ def start_scheduler():
         name='Auto Follow Up Leads'
     )
     scheduler.start()
-        logger.info(
-            "[SCHEDULER] Semua job dimulai:\n"
-            "  - Proactive: 30 menit\n"
-            "  - Follow up WA: 1 jam (max 2x) via Baileys\n"
-            "  - Report: Senin 07.00 WIB\n"
-            "  - Briefing: 06.00 pagi\n"
-            "  - Brain Follow Up: 08.00 pagi + WA otomatis ke kontak\n"
-            "  - Payment Reminder: 09.00 pagi via Baileys"
-        )
+    logger.info(
+        "[SCHEDULER] Semua job dimulai:\n"
+        "  - Proactive: 30 menit\n"
+        "  - Follow up WA: 1 jam (max 2x) via Baileys\n"
+        "  - Report: Senin 07.00 WIB\n"
+        "  - Briefing: 06.00 pagi\n"
+        "  - Brain Follow Up: 08.00 pagi + WA otomatis ke kontak\n"
+        "  - Payment Reminder: 09.00 pagi via Baileys"
+    )
 
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
