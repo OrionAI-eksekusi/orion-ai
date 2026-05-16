@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from fastapi.responses import RedirectResponse
-import os, json, httpx, urllib.parse
+from fastapi.responses import RedirectResponse, JSONResponse
+import os, urllib.parse, httpx
 from datetime import datetime
 
 router = APIRouter()
@@ -11,9 +11,7 @@ REDIRECT_URI = "https://web-production-d2935.up.railway.app/auth/google/callback
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 SCOPES = [
-    "openid",
-    "email",
-    "profile",
+    "openid", "email", "profile",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
 ]
@@ -34,81 +32,91 @@ async def google_login():
 
 @router.get("/auth/google/callback")
 async def google_callback(code: str, state: str = "default"):
-    async with httpx.AsyncClient() as client:
+    try:
+        async with httpx.AsyncClient() as client:
 
-        # 1. Tukar code dengan token
-        token_res = await client.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": code,
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "redirect_uri": REDIRECT_URI,
-                "grant_type": "authorization_code",
-            }
-        )
-        tokens = token_res.json()
-        access_token = tokens.get("access_token", "")
-        refresh_token = tokens.get("refresh_token", "")
+            # 1. Tukar code dengan token
+            token_res = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "redirect_uri": REDIRECT_URI,
+                    "grant_type": "authorization_code",
+                }
+            )
+            tokens = token_res.json()
+            access_token = tokens.get("access_token", "")
+            refresh_token = tokens.get("refresh_token", "")
 
-        # 2. Ambil info user dari Google
-        user_res = await client.get(
-            "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
-        )
-        user_info = user_res.json()
-        email = user_info.get("email", "")
-        name = user_info.get("name", "")
-        photo = user_info.get("picture", "")
+            # Cek token valid
+            if not access_token:
+                print(f"Token error: {tokens}")
+                return RedirectResponse(f"{FRONTEND_URL}/login?error=token_failed")
 
-        # 3. Buat user_id dari email
-        user_id = email.upper().replace("@", "").replace(".", "")
+            # 2. Ambil info user dari Google
+            user_res = await client.get(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            user_info = user_res.json()
+            email = user_info.get("email", "")
+            name = user_info.get("name", "")
+            photo = user_info.get("picture", "")
 
-        # 4. Simpan Gmail token
-        if access_token:
-            from app.services.database_service import save_user_gmail_token
-            save_user_gmail_token(user_id, access_token, refresh_token)
+            if not email:
+                return RedirectResponse(f"{FRONTEND_URL}/login?error=no_email")
 
-        # 5. Simpan user profile & cek plan
-        plan = 'trial'
-        trial_days_left = 3
-        try:
-            from app.services.database_service import get_connection
-            conn, db_type = get_connection()
-            c = conn.cursor()
+            # 3. Buat user_id dari email
+            user_id = email.upper().replace("@", "").replace(".", "")
 
-            if db_type == "postgresql":
-                # Buat user baru atau update
-                c.execute('''
-                    INSERT INTO users (user_id, name, email, photo, plan, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
-                    ON CONFLICT(user_id) DO UPDATE SET
-                        name = excluded.name,
-                        photo = excluded.photo,
-                        updated_at = NOW()
-                    RETURNING plan, trial_end_date
-                ''', (user_id, name, email, photo, 'trial'))
-                row = c.fetchone()
-                if row:
-                    plan = row[0] or 'trial'
-                    trial_end = row[1]
-                    if trial_end:
-                        diff = trial_end - datetime.now()
-                        trial_days_left = max(0, diff.days)
+            # 4. Simpan Gmail token
+            try:
+                from app.services.database_service import save_user_gmail_token
+                save_user_gmail_token(user_id, access_token, refresh_token)
+            except Exception as e:
+                print(f"Error saving gmail token: {e}")
 
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"Error saving user: {e}")
+            # 5. Simpan user profile
+            plan = 'trial'
+            trial_days_left = 3
+            try:
+                from app.services.database_service import get_connection
+                conn, db_type = get_connection()
+                c = conn.cursor()
+                if db_type == "postgresql":
+                    c.execute('''
+                        INSERT INTO users (user_id, name, email, plan, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, NOW(), NOW())
+                        ON CONFLICT(user_id) DO UPDATE SET
+                            name = excluded.name,
+                            updated_at = NOW()
+                        RETURNING plan, trial_end_date
+                    ''', (user_id, name, email, 'trial'))
+                    row = c.fetchone()
+                    if row:
+                        plan = row[0] or 'trial'
+                        trial_end = row[1]
+                        if trial_end:
+                            diff = trial_end - datetime.now()
+                            trial_days_left = max(0, diff.days)
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"Error saving user: {e}")
 
-        # 6. Redirect ke frontend
-        params = urllib.parse.urlencode({
-            "user_id": user_id,
-            "name": name,
-            "email": email,
-            "photo": photo,
-            "plan": plan,
-            "trial_days_left": trial_days_left,
-        })
+            # 6. Redirect ke frontend
+            params = urllib.parse.urlencode({
+                "user_id": user_id,
+                "name": name,
+                "email": email,
+                "photo": photo,
+                "plan": plan,
+                "trial_days_left": trial_days_left,
+            })
+            return RedirectResponse(f"{FRONTEND_URL}/auth/callback?{params}")
 
-        return RedirectResponse(f"{FRONTEND_URL}/auth/callback?{params}")
+    except Exception as e:
+        print(f"Auth error: {e}")
+        return RedirectResponse(f"{FRONTEND_URL}/login?error=server_error")
