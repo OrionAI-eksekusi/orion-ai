@@ -345,7 +345,7 @@ def _set_plan(user_id: str, plan: str):
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute(
-            "UPDATE user_profiles SET plan = ?, updated_at = ? WHERE user_id = ?",
+            "UPDATE user_profiles SET plan = %s, updated_at = %s WHERE user_id = %s",
             (plan, datetime.now().isoformat(), user_id)
         )
         conn.commit()
@@ -413,7 +413,7 @@ def save_wa_message(phone: str, message: str, user_id: str = 'default'):
     conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO wa_messages (user_id, phone, message, received_at, received_timestamp) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO wa_messages (user_id, phone, message, received_at, received_timestamp) VALUES (%s, %s, %s, %s, %s)",
         (user_id, phone, message, datetime.now().strftime("%H:%M"), datetime.now().isoformat())
     )
     conn.commit()
@@ -436,7 +436,7 @@ def mark_replied(phone: str, user_id: str = 'default'):
     conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute(
-        "UPDATE wa_messages SET replied=1 WHERE phone=? AND user_id=? AND replied=0",
+        "UPDATE wa_messages SET replied=1 WHERE phone=%s AND user_id=%s AND replied=0",
         (phone, user_id)
     )
     conn.commit()
@@ -652,11 +652,11 @@ def save_fcm_token_db(token: str, user_id: str = 'default'):
          created_at TIMESTAMP DEFAULT NOW())
     ''')
     c.execute(
-        "INSERT INTO fcm_tokens (user_id, token) VALUES (?, ?)",
+        "INSERT INTO fcm_tokens (user_id, token) VALUES (%s, %s)",
         (user_id, token)
     )
     c.execute(
-        "UPDATE user_profiles SET fcm_token=? WHERE user_id=?",
+        "UPDATE user_profiles SET fcm_token=%s WHERE user_id=%s",
         (token, user_id)
     )
     conn.commit()
@@ -668,7 +668,7 @@ def get_fcm_token_db(user_id: str = 'default') -> str:
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute(
-            "SELECT token FROM fcm_tokens WHERE user_id=? ORDER BY id DESC LIMIT 1",
+            "SELECT token FROM fcm_tokens WHERE user_id=%s ORDER BY id DESC LIMIT 1",
             (user_id,)
         )
         row = c.fetchone()
