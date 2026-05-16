@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel
 from app.services.ai_service import process_command, generate_briefing, extract_tasks, generate_wa_reply
+from app.services.agent_runtime import run_sales_agent
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message, broadcast_whatsapp
 from app.services.database_service import (
@@ -857,7 +858,13 @@ async def whatsapp_webhook(request: Request):
         customer_context = build_customer_context(phone)
 
         try:
-            ai_result = await generate_wa_reply(message, customer_context)
+            # APEX Agent Runtime — full context + CRM state machine
+            agent_result = await run_sales_agent(
+                user_id=user_id or 'default',
+                phone=phone,
+                message=message,
+            )
+            ai_result = agent_result.get('reply', 'Terima kasih atas pesan Anda!')
         except Exception as ai_err:
             print(f"[WA REPLY AI ERROR] {ai_err}")
             ai_result = "Terima kasih atas pesan Anda. Kami akan segera membalas."
