@@ -48,10 +48,10 @@ async def proactive_check():
             body=f"{sender_clean}: {subject[:60]}",
             data={"type": "email"}
         )
-        logger.info(f"[PROACTIVE] Notif terkirim: {count} email baru")
-
     except Exception as e:
         logger.error(f"[PROACTIVE ERROR] {e}")
+        logger.info(f"[PROACTIVE] Notif terkirim: {count} email baru")
+
 
 
 async def follow_up_check():
@@ -92,10 +92,10 @@ async def follow_up_check():
 
                 send_whatsapp_baileys(phone, follow_up)
                 mark_follow_up_sent(phone)
-                logger.info(f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
-
             except Exception as e:
                 logger.error(f"[FOLLOWUP ERROR] {phone}: {e}")
+                logger.info(f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
+
 
     except Exception as e:
         logger.error(f"[FOLLOWUP CHECK ERROR] {e}")
@@ -162,17 +162,17 @@ async def brain_follow_up_check():
 
                         try:
                             send_whatsapp_baileys(phone, wa_msg)
-                            logger.info(f"[BRAIN FOLLOWUP] WA terkirim ke {name} ({phone})")
                         except Exception as wa_err:
                             logger.error(f"[BRAIN FOLLOWUP WA ERROR] {name}: {wa_err}")
+                            logger.info(f"[BRAIN FOLLOWUP] WA terkirim ke {name} ({phone})")
                     else:
+            except Exception as e:
+                logger.error(f"[BRAIN FOLLOWUP ERROR] user {user_id}: {e}")
                         logger.info(f"[BRAIN FOLLOWUP] {name} tidak punya nomor WA di notes, skip kirim WA")
 
                     mark_brain_follow_up_sent(user_id, name)
                     logger.info(f"[BRAIN FOLLOWUP] Follow up selesai: {name} (user: {user_id})")
 
-            except Exception as e:
-                logger.error(f"[BRAIN FOLLOWUP ERROR] user {user_id}: {e}")
 
     except Exception as e:
         logger.error(f"[BRAIN FOLLOWUP CHECK ERROR] {e}")
@@ -248,9 +248,9 @@ async def payment_reminder_check():
                     if phone:
                         try:
                             send_whatsapp_baileys(phone, wa_msg)
-                            logger.info(f"[PAYMENT] WA reminder terkirim ke {name} ({phone})")
                         except Exception as e:
                             logger.error(f"[PAYMENT WA ERROR] {e}")
+                            logger.info(f"[PAYMENT] WA reminder terkirim ke {name} ({phone})")
 
                     increment_reminder_count(inv_number, user_id)
 
@@ -261,10 +261,10 @@ async def payment_reminder_check():
                         user_id=user_id
                     )
 
-                logger.info(f"[PAYMENT] {len(due_invoices)} reminder terkirim untuk {user_id}")
-
             except Exception as e:
                 logger.error(f"[PAYMENT ERROR] user {user_id}: {e}")
+                logger.info(f"[PAYMENT] {len(due_invoices)} reminder terkirim untuk {user_id}")
+
 
     except Exception as e:
         logger.error(f"[PAYMENT REMINDER ERROR] {e}")
@@ -430,14 +430,14 @@ Semangat hari ini! 💪🔥
                 from app.services.whatsapp_service import send_whatsapp_baileys
                 if user_phone:
                     send_whatsapp_baileys(user_phone, briefing_text)
-                    logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
             except Exception as e:
                 logger.error(f"[BRIEFING WA] {e}")
-
-        logger.info("[BRIEFING] Daily Intelligence Briefing selesai!")
+                    logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
 
     except Exception as e:
         logger.error(f"[BRIEFING ERROR] {e}")
+        logger.info("[BRIEFING] Daily Intelligence Briefing selesai!")
+
 
 
 async def generate_weekly_report():
@@ -507,6 +507,8 @@ Orion AI 🤖""",
                 file_path=pdf_path,
                 filename=f"Laporan_Mingguan_{datetime.now().strftime('%Y%m%d')}.pdf"
             )
+    except Exception as e:
+        logger.error(f"[REPORT ERROR] {e}")
             logger.info(f"[REPORT] Laporan terkirim ke {boss_email}")
 
         await send_fcm_notification(
@@ -515,8 +517,6 @@ Orion AI 🤖""",
             data={"type": "report"}
         )
 
-    except Exception as e:
-        logger.error(f"[REPORT ERROR] {e}")
 
 
 async def _generate_report_pdf(
@@ -687,11 +687,11 @@ async def _generate_report_pdf(
         ))
 
         doc.build(story)
+    except Exception as e:
+        logger.error(f"[REPORT PDF ERROR] {e}")
         logger.info(f"[REPORT] PDF berhasil: {filename}")
         return filename
 
-    except Exception as e:
-        logger.error(f"[REPORT PDF ERROR] {e}")
         return ""
 
 
@@ -745,6 +745,8 @@ def start_scheduler():
         )
 
         
+    except Exception as e:
+        logger.error(f"[SCHEDULER ERROR] {e}")
     logger.info(
         "[SCHEDULER] Semua job dimulai:\n"
         "  - Proactive: 30 menit\n"
@@ -755,8 +757,6 @@ def start_scheduler():
         "  - Payment Reminder: 09.00 pagi via Baileys"
     )
 
-    except Exception as e:
-        logger.error(f"[SCHEDULER ERROR] {e}")
 
 
 def stop_scheduler():
