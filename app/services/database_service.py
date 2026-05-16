@@ -424,7 +424,7 @@ def get_wa_messages(limit=10, user_id: str = 'default'):
     conn, _db_type = get_connection()
     c = conn.cursor()
     c.execute(
-        "SELECT phone, message, received_at, replied FROM wa_messages WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        "SELECT phone, message, received_at, replied FROM wa_messages WHERE user_id=%s ORDER BY id DESC LIMIT %s",
         (user_id, limit)
     )
     rows = c.fetchall()
