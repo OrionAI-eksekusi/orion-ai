@@ -588,14 +588,23 @@ async def wa_reply(request: WAReplyRequest):
 
 
 @router.get("/wa-qr")
-async def get_wa_qr():
+async def get_wa_qr(user_id: str = "default"):
+    import asyncio
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            res = await client.get(f"{WA_GATEWAY_URL}/qr")
+        async with httpx.AsyncClient(timeout=15) as client:
+            # Trigger connect dulu
+            try:
+                await client.post(f"{WA_GATEWAY_URL}/connect", json={"user_id": user_id})
+            except:
+                pass
+            # Tunggu QR generate
+            await asyncio.sleep(8)
+            # Ambil QR
+            res = await client.get(f"{WA_GATEWAY_URL}/qr?user_id={user_id}")
             data = res.json()
             return {"status": "success", "qr_url": data.get("qr_url", "")}
-    except:
-        return {"status": "error", "qr_url": ""}
+    except Exception as e:
+        return {"status": "error", "qr_url": "", "error": str(e)}
 
 
 @router.get("/wa-status")
