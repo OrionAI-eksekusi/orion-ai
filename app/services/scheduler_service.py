@@ -695,6 +695,11 @@ async def _generate_report_pdf(
         return ""
 
 
+
+async def run_follow_up_job():
+    from app.services.followup_service import run_follow_up
+    await run_follow_up()
+
 def start_scheduler():
     try:
         scheduler.add_job(
@@ -739,7 +744,16 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        scheduler.start()
+        
+    # Follow up otomatis setiap 1 jam
+    scheduler.add_job(
+        run_follow_up_job,
+        'interval',
+        hours=1,
+        id='follow_up',
+        name='Auto Follow Up Leads'
+    )
+    scheduler.start()
         logger.info(
             "[SCHEDULER] Semua job dimulai:\n"
             "  - Proactive: 30 menit\n"
