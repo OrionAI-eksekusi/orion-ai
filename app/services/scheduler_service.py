@@ -745,15 +745,6 @@ def start_scheduler():
         )
 
         
-    # Follow up otomatis setiap 1 jam
-    scheduler.add_job(
-        run_follow_up_job,
-        'interval',
-        hours=1,
-        id='follow_up',
-        name='Auto Follow Up Leads'
-    )
-    scheduler.start()
     logger.info(
         "[SCHEDULER] Semua job dimulai:\n"
         "  - Proactive: 30 menit\n"
