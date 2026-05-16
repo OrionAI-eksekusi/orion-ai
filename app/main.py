@@ -15,6 +15,9 @@ async def lifespan(app: FastAPI):
         init_db()
         init_memory_db()
         init_zenith_db()
+        import asyncio
+        from app.services.schema_service import init_apex_schema
+        asyncio.create_task(init_apex_schema())
         print("[STARTUP] ✅ Database initialized!")
     except Exception as e:
         print(f"[STARTUP] ❌ DB init error: {e}")
