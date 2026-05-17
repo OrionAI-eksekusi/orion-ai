@@ -210,12 +210,13 @@ async def save_memory(user_id: str, phone: str, key: str, value: str):
     try:
         conn = get_db()
         c = conn.cursor()
-        await conn.execute("""
+        c.execute("""
             INSERT INTO customer_memories (user_id, phone, memory_key, memory_value, updated_at)
-            VALUES ($1, $2, $3, $4, NOW())
+            VALUES (%s, %s, %s, %s, NOW())
             ON CONFLICT (user_id, phone, memory_key)
-            DO UPDATE SET memory_value = $4, updated_at = NOW()
-        """, user_id, phone, key, value)
+            DO UPDATE SET memory_value = %s, updated_at = NOW()
+        """, (user_id, phone, key, value, value))
+        conn.commit()
         conn.close()
     except Exception as e:
         print(f"[MEMORY] save_memory error: {e}")
