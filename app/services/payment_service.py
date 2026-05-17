@@ -34,17 +34,15 @@ async def create_payment(user_id: str, plan: str, user_email: str, user_name: st
         order_id = f"ORION-{user_id}-{plan}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
         body = {
-            "product": [plan_info["name"]],
-            "qty": [1],
-            "price": [plan_info["price"]],
-            "amount": plan_info["price"],
-            "returnUrl": f"{FRONTEND_URL}/payment/success?order_id={order_id}&plan={plan}&user_id={user_id}",
-            "cancelUrl": f"{FRONTEND_URL}/payment/cancel",
-            "notifyUrl": f"https://web-production-d2935.up.railway.app/chat/payment-webhook",
+            "name": user_name,
+            "phone": "",
+            "email": user_email,
+            "amount": str(plan_info["price"]),
+            "notifyUrl": "https://web-production-d2935.up.railway.app/chat/payment-webhook",
+            "comments": f"Orion AI {plan.upper()} - 1 bulan",
             "referenceId": order_id,
-            "buyerName": user_name,
-            "buyerEmail": user_email,
-            "buyerPhone": "",
+            "paymentMethod": "va",
+            "paymentChannel": "bca",
         }
 
         headers = {
@@ -55,7 +53,7 @@ async def create_payment(user_id: str, plan: str, user_email: str, user_name: st
         }
 
         async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.post(f"{IPAYMU_URL}/payment", json=body, headers=headers)
+            res = await client.post(f"{IPAYMU_URL}/payment/direct", json=body, headers=headers)
             data = res.json()
             if data.get("Status") == 200:
                 return {"status": "success", "payment_url": data["Data"]["Url"], "order_id": order_id}
