@@ -1047,3 +1047,40 @@ async def update_profile(request: Request):
         return {"status": "success", "message": "Profile updated!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ── SOP Bisnis ───────────────────────────────────────
+@router.post("/save-sop")
+async def save_sop(request: Request):
+    try:
+        data = await request.json()
+        user_id = data.get("user_id")
+        sop_type = data.get("sop_type", "general")
+        content = data.get("content", "")
+        
+        from app.services.database_service import get_connection
+        conn, _ = get_connection()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO workspace_sop (user_id, sop_type, content, updated_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (user_id, sop_type)
+            DO UPDATE SET content = %s, updated_at = NOW()
+        """, (user_id, sop_type, content, content))
+        conn.commit()
+        conn.close()
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.get("/get-sop/{user_id}")
+async def get_sop(user_id: str):
+    try:
+        from app.services.database_service import get_connection
+        conn, _ = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT sop_type, content FROM workspace_sop WHERE user_id = %s", (user_id,))
+        rows = c.fetchall()
+        conn.close()
+        return {"status": "success", "sop": [{"type": r[0], "content": r[1]} for r in rows]}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
