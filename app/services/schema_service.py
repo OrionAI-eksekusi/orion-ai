@@ -2,18 +2,19 @@
 APEX Production Database Schema
 PostgreSQL tables untuk multi-tenant SaaS
 """
-import asyncpg
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 async def init_apex_schema():
     """Initialize all APEX tables — idempotent, safe to run multiple times"""
-    conn = await asyncpg.connect(DATABASE_URL)
+    from app.services.database_service import get_connection
+    conn, _ = get_connection()
+    c = conn.cursor()
     
     try:
         # Users table
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id TEXT PRIMARY KEY,
                 name TEXT,
@@ -30,7 +31,7 @@ async def init_apex_schema():
         """)
 
         # Gmail tokens
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS user_gmail_tokens (
                 user_id TEXT PRIMARY KEY REFERENCES users(user_id),
                 access_token TEXT,
@@ -40,7 +41,7 @@ async def init_apex_schema():
         """)
 
         # WA Messages
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS wa_messages (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -58,7 +59,7 @@ async def init_apex_schema():
         """)
 
         # Leads CRM
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS leads (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -77,7 +78,7 @@ async def init_apex_schema():
         """)
 
         # Customer memories
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS customer_memories (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -90,7 +91,7 @@ async def init_apex_schema():
         """)
 
         # Workspace SOP
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS workspace_sop (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -102,7 +103,7 @@ async def init_apex_schema():
         """)
 
         # Calendar events
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS calendar_events (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -117,7 +118,7 @@ async def init_apex_schema():
         """)
 
         # Tasks
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -133,7 +134,7 @@ async def init_apex_schema():
         """)
 
         # Follow ups
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS followups (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -146,7 +147,7 @@ async def init_apex_schema():
         """)
 
         # Billing usage
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS billing_usages (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -157,7 +158,7 @@ async def init_apex_schema():
         """)
 
         # Audit logs
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS audit_logs (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -172,7 +173,7 @@ async def init_apex_schema():
         """)
 
         # Invoices/Zenith
-        await conn.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS invoices (
                 id SERIAL PRIMARY KEY,
                 user_id TEXT,
@@ -196,4 +197,5 @@ async def init_apex_schema():
         print(f"[SCHEMA] ❌ Error: {e}")
         raise e
     finally:
-        await conn.close()
+        conn.commit()
+        conn.close()

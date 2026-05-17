@@ -2,7 +2,6 @@
 APEX Follow Up Service
 Auto follow up leads yang belum reply dalam 24 jam
 """
-import asyncpg
 import httpx
 import os
 from datetime import datetime, timedelta
@@ -19,10 +18,12 @@ FOLLOW_UP_MESSAGES = [
 async def run_follow_up():
     """Check semua leads yang belum reply dalam 24 jam dan kirim follow up"""
     try:
-        conn = await asyncpg.connect(DATABASE_URL)
+        from app.services.database_service import get_connection
+    conn, _ = get_connection()
+    c = conn.cursor()
         
         # Ambil leads yang belum reply dalam 24 jam
-        leads = await conn.fetch("""
+        c.execute("""
             SELECT l.user_id, l.phone, l.name, l.current_state, 
                    l.follow_up_count, l.last_contact,
                    ws.phone as wa_session_phone
@@ -35,12 +36,14 @@ async def run_follow_up():
             LIMIT 50
         """)
         
+        leads = c.fetchall()
         print(f"[FOLLOWUP] Found {len(leads)} leads to follow up")
         
         for lead in leads:
             await send_follow_up(conn, lead)
         
-        await conn.close()
+        conn.commit()
+    conn.close()
         
     except Exception as e:
         print(f"[FOLLOWUP] Error: {e}")
@@ -48,10 +51,10 @@ async def run_follow_up():
 async def send_follow_up(conn, lead):
     """Kirim follow up message ke satu lead"""
     try:
-        user_id = lead['user_id']
-        phone = lead['phone']
-        name = lead['name'] or 'Kak'
-        follow_up_count = lead['follow_up_count'] or 0
+        user_id = lead[0]
+        phone = lead[1]
+        name = lead[2] or 'Kak'
+        follow_up_count = lead[4] or 0
         
         # Pilih pesan berdasarkan urutan follow up
         msg_template = FOLLOW_UP_MESSAGES[min(follow_up_count, len(FOLLOW_UP_MESSAGES) - 1)]
@@ -67,7 +70,7 @@ async def send_follow_up(conn, lead):
             
             if res.status_code == 200:
                 # Update follow up count dan last contact
-                await conn.execute("""
+                c.execute("""
                     UPDATE leads 
                     SET follow_up_count = follow_up_count + 1,
                         last_contact = NOW(),
@@ -80,4 +83,4 @@ async def send_follow_up(conn, lead):
                 print(f"[FOLLOWUP] ❌ Failed to send to {phone}")
                 
     except Exception as e:
-        print(f"[FOLLOWUP] Error sending to {lead['phone']}: {e}")
+        print(f"[FOLLOWUP] Error sending to {lead[1]}: {e}")
