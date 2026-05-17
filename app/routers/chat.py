@@ -1125,8 +1125,10 @@ async def send_notification(request: Request):
 async def get_calendar(user_id: str):
     try:
         from app.services.calendar_service import get_upcoming_events
-        events = get_upcoming_events()
-        return {"status": "success", "events": events}
+        result = get_upcoming_events(user_id)
+        if result.get("reauth_required"):
+            return {"status": "reauth_required", "message": "Silakan login ulang untuk mengaktifkan Google Calendar"}
+        return {"status": "success", "events": result.get("events", [])}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -1134,13 +1136,27 @@ async def get_calendar(user_id: str):
 async def add_calendar(request: Request):
     try:
         data = await request.json()
+        user_id = data.get("user_id")
+        if not user_id:
+            return {"status": "error", "message": "user_id wajib diisi"}
         from app.services.calendar_service import add_calendar_event
+        from datetime import datetime, timedelta
+        start_time = data.get("start_time", datetime.now().isoformat())
+        duration_hours = data.get("duration_hours", 1)
+        try:
+            start_dt = datetime.fromisoformat(start_time)
+        except:
+            start_dt = datetime.now() + timedelta(days=1)
+        end_dt = start_dt + timedelta(hours=duration_hours)
         result = add_calendar_event(
-            title=data.get("title"),
-            description=data.get("description", ""),
-            start_time=data.get("start_time"),
-            duration_hours=data.get("duration_hours", 1)
+            user_id=user_id,
+            title=data.get("title", ""),
+            start=start_dt.isoformat(),
+            end=end_dt.isoformat(),
+            description=data.get("description", "")
         )
+        if result.get("reauth_required"):
+            return {"status": "reauth_required", "message": "Silakan login ulang untuk mengaktifkan Google Calendar"}
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}

@@ -72,7 +72,7 @@ def _save_refreshed_token(user_id: str, new_access_token: str):
         print(f"[CALENDAR] Error refresh token: {e}")
 
 
-def get_calendar_events(user_id: str, max_results: int = 10):
+def get_upcoming_events(user_id: str, max_results: int = 10):
     creds, error = get_user_credentials(user_id)
     if error:
         return {"error": error, "reauth_required": True, "events": []}
