@@ -414,7 +414,7 @@ def save_wa_message(phone: str, message: str, user_id: str = 'default'):
     c = conn.cursor()
     c.execute(
         "INSERT INTO wa_messages (user_id, phone, message, received_at, received_timestamp) VALUES (%s, %s, %s, %s, %s)",
-        (user_id, phone, message, datetime.now().strftime("%H:%M"), datetime.now().isoformat())
+        (user_id, phone, message, datetime.now(), datetime.now().isoformat())
     )
     conn.commit()
     conn.close()
