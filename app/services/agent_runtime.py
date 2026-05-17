@@ -137,10 +137,19 @@ INSTRUKSI:
 
         # 6. HUMAN HANDOFF CHECK
         needs_human = False
-        human_triggers = ['marah', 'komplain', 'tipu', 'bohong', 'lapor', 'hukum']
+        human_triggers = ['marah', 'komplain', 'tipu', 'bohong', 'lapor', 'hukum', 'brengsek', 'refund', 'mau lapor']
         if any(t in message.lower() for t in human_triggers):
             needs_human = True
             await update_lead_state(user_id, phone, 'HUMAN_REQUIRED', {})
+            reply = "Mohon maaf atas ketidaknyamanannya kak 🙏 Tim kami akan segera membantu!"
+            print(f"[HANDOFF] 🚨 Human required for {phone}")
+            try:
+                import asyncio
+                asyncio.create_task(__import__('httpx').AsyncClient().post(
+                    "https://web-production-d2935.up.railway.app/chat/notifications/send",
+                    json={"user_id": user_id, "type": "human_required", "phone": phone}
+                ))
+            except: pass
 
         # Log token usage
         try:
