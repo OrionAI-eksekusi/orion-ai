@@ -143,6 +143,23 @@ INSTRUKSI:
             await update_lead_state(user_id, phone, 'HUMAN_REQUIRED', {})
 
         print(f"[AGENT] ✅ Reply generated for {phone} | State: {detected_state} | Score: {lead_score}")
+        
+        # Auto kirim PDF jika READY_TO_BUY
+        if detected_state == 'READY_TO_BUY':
+            try:
+                from app.services.pdf_service import generate_and_send_quotation
+                business_name = user_profile.get('business_name', 'Bisnis Kami')
+                asyncio.create_task(generate_and_send_quotation(
+                    user_id=user_id,
+                    phone=phone,
+                    customer_name=memory.get('customer_name', 'Customer'),
+                    items=[{"name": "Produk/Layanan", "qty": 1, "price": 0}],
+                    notes="Harga akan dikonfirmasi oleh tim kami",
+                    business_name=business_name
+                ))
+                print(f"[AGENT] 📄 PDF quotation triggered for {phone}")
+            except Exception as pdf_err:
+                print(f"[AGENT] PDF error: {pdf_err}")
 
         return {
             "reply": reply,
