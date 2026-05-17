@@ -164,7 +164,6 @@ def update_customer_memory(phone: str, message: str, reply: str):
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     extracted_name = extract_name_from_message(message)
     conn, _db_type = get_connection()
-    conn.execute("PRAGMA journal_mode=WAL")
     c = conn.cursor()
     try:
         c.execute("SELECT name, history, message_count FROM customer_memory WHERE phone=%s", (phone,))
