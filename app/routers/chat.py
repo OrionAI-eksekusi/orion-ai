@@ -1005,3 +1005,16 @@ async def payment_webhook(request: Request):
     except Exception as e:
         print(f"[PAYMENT WEBHOOK ERROR] {e}")
         return {"status": "ok"}
+
+# ── Trigger Briefing Manual ───────────────────────────────────────
+@router.post("/trigger-briefing")
+async def trigger_briefing(request: Request):
+    try:
+        data = await request.json()
+        if data.get("secret") != "orion-admin-2026":
+            return {"status": "error", "message": "Unauthorized"}
+        from app.services.scheduler_service import daily_intelligence_briefing
+        await daily_intelligence_briefing()
+        return {"status": "success", "message": "Briefing triggered!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
