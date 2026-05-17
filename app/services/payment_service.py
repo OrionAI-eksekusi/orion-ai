@@ -18,10 +18,12 @@ PLANS = {
 }
 
 def generate_signature(body: dict) -> str:
+    import hmac
     body_str = json.dumps(body, separators=(',', ':'))
     body_hash = hashlib.sha256(body_str.encode()).hexdigest()
     string_to_sign = f"POST:{IPAYMU_VA}:{body_hash}:{IPAYMU_API_KEY}"
-    return hashlib.sha256(string_to_sign.encode()).hexdigest()
+    signature = hmac.new(IPAYMU_API_KEY.encode(), string_to_sign.encode(), hashlib.sha256).hexdigest().lower()
+    return signature
 
 async def create_payment(user_id: str, plan: str, user_email: str, user_name: str) -> dict:
     try:
