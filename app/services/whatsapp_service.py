@@ -20,7 +20,7 @@ def send_whatsapp(phone: str, message: str):
     return response.json()
 
 
-def send_whatsapp_baileys(phone: str, message: str) -> dict:
+def send_whatsapp_baileys(phone: str, message: str, user_id: str = "AZVICKYFADZRY02GMAILCOM") -> dict:
     """Kirim WA teks via Baileys"""
     try:
         phone_clean = phone.strip().replace(" ", "").replace("-", "")
@@ -31,7 +31,7 @@ def send_whatsapp_baileys(phone: str, message: str) -> dict:
 
         response = requests.post(
             f"{WA_GATEWAY_URL}/send-message",
-            json={"phone": phone_clean, "message": message},
+            json={"phone": phone_clean, "message": message, "user_id": user_id},
             timeout=15
         )
         result = response.json()
