@@ -1084,3 +1084,38 @@ async def get_sop(user_id: str):
         return {"status": "success", "sop": [{"type": r[0], "content": r[1]} for r in rows]}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ── Real-time Notifications SSE ───────────────────────────────────────
+import asyncio
+from fastapi.responses import StreamingResponse
+
+notification_queues = {}
+
+@router.get("/notifications/stream/{user_id}")
+async def notification_stream(user_id: str):
+    async def event_generator():
+        queue = asyncio.Queue()
+        notification_queues[user_id] = queue
+        try:
+            while True:
+                data = await asyncio.wait_for(queue.get(), timeout=30)
+                yield f"data: {json.dumps(data)}\n\n"
+        except asyncio.TimeoutError:
+            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+        except Exception:
+            pass
+        finally:
+            notification_queues.pop(user_id, None)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@router.post("/notifications/send")
+async def send_notification(request: Request):
+    try:
+        data = await request.json()
+        user_id = data.get("user_id")
+        if user_id in notification_queues:
+            await notification_queues[user_id].put(data)
+        return {"status": "sent"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
