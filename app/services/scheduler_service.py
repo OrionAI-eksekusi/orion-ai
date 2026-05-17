@@ -275,9 +275,7 @@ async def payment_reminder_check():
 
             except Exception as e:
                 logger.error(f"[PAYMENT ERROR] user {user_id}: {e}")
-                logger.info(
-                    f"[PAYMENT] {
-                        len(due_invoices)} reminder terkirim untuk {user_id}")
+                logger.info(f"[PAYMENT] {len(due_invoices)} reminder terkirim untuk {user_id}")
 
     except Exception as e:
         logger.error(f"[PAYMENT REMINDER ERROR] {e}")
