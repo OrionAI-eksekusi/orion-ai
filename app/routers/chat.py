@@ -1119,3 +1119,28 @@ async def send_notification(request: Request):
         return {"status": "sent"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ── Calendar ───────────────────────────────────────
+@router.get("/calendar/{user_id}")
+async def get_calendar(user_id: str):
+    try:
+        from app.services.calendar_service import get_upcoming_events
+        events = get_upcoming_events()
+        return {"status": "success", "events": events}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/calendar/add")
+async def add_calendar(request: Request):
+    try:
+        data = await request.json()
+        from app.services.calendar_service import add_calendar_event
+        result = add_calendar_event(
+            title=data.get("title"),
+            description=data.get("description", ""),
+            start_time=data.get("start_time"),
+            duration_hours=data.get("duration_hours", 1)
+        )
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
