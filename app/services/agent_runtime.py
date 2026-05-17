@@ -142,7 +142,21 @@ INSTRUKSI:
             needs_human = True
             await update_lead_state(user_id, phone, 'HUMAN_REQUIRED', {})
 
-        print(f"[AGENT] ✅ Reply generated for {phone} | State: {detected_state} | Score: {lead_score}")
+        # Log token usage
+        try:
+            tokens_used = response.usage.input_tokens + response.usage.output_tokens
+            from app.services.database_service import get_connection
+            conn, _ = get_connection()
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO billing_usages (user_id, usage_type, tokens_used, created_at)
+                VALUES (%s, %s, %s, NOW())
+            """, (user_id, 'wa_reply', tokens_used))
+            conn.commit()
+            conn.close()
+            print(f"[AGENT] ✅ Reply generated for {phone} | State: {detected_state} | Score: {lead_score} | Tokens: {tokens_used}")
+        except Exception as token_err:
+            print(f"[AGENT] ✅ Reply generated for {phone} | State: {detected_state} | Score: {lead_score}")
         
         # Auto kirim PDF jika READY_TO_BUY
         if detected_state == 'READY_TO_BUY':
