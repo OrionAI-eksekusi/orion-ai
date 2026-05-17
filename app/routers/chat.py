@@ -965,3 +965,43 @@ async def init_db_endpoint(request: Request):
         return {"status": "success", "message": "Database initialized!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ── Payment iPaymu ───────────────────────────────────────
+@router.post("/create-payment")
+async def create_payment_endpoint(request: Request):
+    try:
+        data = await request.json()
+        from app.services.payment_service import create_payment
+        result = await create_payment(
+            user_id=data.get("user_id"),
+            plan=data.get("plan"),
+            user_email=data.get("email"),
+            user_name=data.get("name"),
+        )
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/payment-webhook")
+async def payment_webhook(request: Request):
+    try:
+        data = await request.json()
+        print(f"[PAYMENT WEBHOOK] {data}")
+        reference_id = data.get("reference_id") or data.get("referenceId", "")
+        status = data.get("status", "")
+        if status in ["SUCCESS", "PAID", "settlement"] and reference_id:
+            parts = reference_id.split("-")
+            if len(parts) >= 3:
+                user_id = parts[1]
+                plan = parts[2]
+                from app.services.database_service import get_connection
+                conn, _ = get_connection()
+                c = conn.cursor()
+                c.execute("UPDATE users SET plan = %s, updated_at = NOW() WHERE user_id = %s", (plan, user_id))
+                conn.commit()
+                conn.close()
+                print(f"[PAYMENT] ✅ User {user_id} upgraded to {plan}")
+        return {"status": "ok"}
+    except Exception as e:
+        print(f"[PAYMENT WEBHOOK ERROR] {e}")
+        return {"status": "ok"}
