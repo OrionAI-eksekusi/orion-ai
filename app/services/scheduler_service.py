@@ -405,8 +405,7 @@ async def daily_intelligence_briefing():
                 if due_invoices:
                     invoice_reminder = f"\n\n💰 TAGIHAN JATUH TEMPO:\n"
                     for inv in due_invoices[:3]:
-                        invoice_reminder += f"• {inv['customer_name']} — {format_amount(
-                                inv['amount'])}\n"
+                        invoice_reminder += f"• {inv['customer_name']} — {format_amount(inv['amount'])}\n"
             except Exception:
                 pass
 
