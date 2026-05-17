@@ -405,9 +405,7 @@ async def daily_intelligence_briefing():
                 if due_invoices:
                     invoice_reminder = f"\n\n💰 TAGIHAN JATUH TEMPO:\n"
                     for inv in due_invoices[:3]:
-                        invoice_reminder += f"• {
-                            inv['customer_name']} — {
-                            format_amount(
+                        invoice_reminder += f"• {inv['customer_name']} — {format_amount(
                                 inv['amount'])}\n"
             except Exception:
                 pass
@@ -554,8 +552,7 @@ async def _generate_report_pdf(
         import os
 
         os.makedirs("/tmp/reports", exist_ok=True)
-        filename = f"/tmp/reports/laporan_{
-            datetime.now().strftime('%Y%m%d%H%M')}.pdf"
+        filename = f"/tmp/reports/laporan_{datetime.now().strftime('%Y%m%d%H%M')}.pdf"
 
         doc = SimpleDocTemplate(filename, pagesize=A4,
                                 rightMargin=2*cm, leftMargin=2*cm,
@@ -576,8 +573,7 @@ async def _generate_report_pdf(
         ))
         story.append(
             Paragraph(
-                f"<font size='12' color='#6B7280'>Orion AI Execution System • {
-                    datetime.now().strftime('%d %B %Y %H:%M')}</font>",
+                f"<font size='12' color='#6B7280'>Orion AI Execution System • {datetime.now().strftime('%d %B %Y %H:%M')}</font>",
                 ParagraphStyle(
                     "center",
                     alignment=TA_CENTER)))
@@ -746,8 +742,7 @@ async def _generate_report_pdf(
                 spaceAfter=6))
         story.append(
             Paragraph(
-                f"<font size='9' color='#6B7280'>Laporan ini dibuat otomatis oleh Orion AI • {
-                    datetime.now().strftime('%d/%m/%Y %H:%M')} WIB</font>",
+                f"<font size='9' color='#6B7280'>Laporan ini dibuat otomatis oleh Orion AI • {datetime.now().strftime('%d/%m/%Y %H:%M')} WIB</font>",
                 ParagraphStyle(
                     "center",
                     alignment=TA_CENTER)))
