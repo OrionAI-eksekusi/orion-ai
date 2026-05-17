@@ -13,8 +13,10 @@ from typing import Optional
 DATABASE_URL = os.getenv("DATABASE_URL")
 REDIS_URL = os.getenv("REDIS_URL")
 
-async def get_db():
-    return await asyncpg.connect(DATABASE_URL)
+def get_db():
+    from app.services.database_service import get_connection
+    conn, _ = get_connection()
+    return conn
 
 async def aggregate_context(user_id: str, phone: str = None) -> dict:
     """
