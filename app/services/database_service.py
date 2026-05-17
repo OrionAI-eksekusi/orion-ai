@@ -756,3 +756,33 @@ async def get_user_id_by_wa_session(phone: str) -> str:
     except Exception as e:
         print(f"[DB] get_user_id_by_wa_session error: {e}")
         return None
+
+def check_and_increment_usage(user_id: str, plan: str) -> dict:
+    """Check apakah user masih punya quota command hari ini"""
+    limits = {"free": 10, "trial": 999, "apex": 100, "zenith": 200}
+    limit = limits.get(plan, 10)
+    
+    conn, _ = get_connection()
+    c = conn.cursor()
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    c.execute("""
+        INSERT INTO daily_usage (user_id, date, command_count)
+        VALUES (%s, %s, 1)
+        ON CONFLICT (user_id, date)
+        DO UPDATE SET command_count = daily_usage.command_count + 1
+        RETURNING command_count
+    """, (user_id, today))
+    
+    result = c.fetchone()
+    count = result[0] if result else 1
+    conn.commit()
+    conn.close()
+    
+    return {
+        "allowed": count <= limit,
+        "count": count,
+        "limit": limit,
+        "remaining": max(0, limit - count)
+    }
