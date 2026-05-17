@@ -864,12 +864,14 @@ async def whatsapp_webhook(request: Request):
         phone = incoming["phone"]
         message = incoming["message"]
 
+        user_id = data.get("user_id") or "AZVICKYFADZRY02GMAILCOM"
+        print(f"[WEBHOOK] {phone} -> {user_id}: {message[:30]}")
         customer_context = build_customer_context(phone)
 
         try:
             # APEX Agent Runtime — full context + CRM state machine
             agent_result = await run_sales_agent(
-                user_id=user_id or 'default',
+                user_id=user_id,
                 phone=phone,
                 message=message,
             )
