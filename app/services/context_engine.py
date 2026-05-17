@@ -4,7 +4,6 @@ Aggregates all context needed by LLM before activation
 Uses asyncio.gather for maximum parallelism — zero sequential blocking
 """
 import asyncio
-import asyncpg
 import json
 import os
 from datetime import datetime, timedelta
@@ -53,16 +52,18 @@ async def get_chat_history(user_id: str, phone: str, limit: int = 20) -> list:
     if not phone:
         return []
     try:
-        conn = await get_db()
-        rows = await conn.fetch("""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
             SELECT phone, message, received_at
             FROM wa_messages
             WHERE user_id = $1 AND phone = $2
             ORDER BY received_at DESC
             LIMIT $3
         """, user_id, phone, limit)
-        await conn.close()
-        return [dict(r) for r in reversed(rows)]
+        conn.close()
+        rows = c.fetchall()
+        return [dict(zip([d[0] for d in c.description], r)) for r in reversed(rows)]
     except Exception as e:
         print(f"[CONTEXT] get_chat_history error: {e}")
         return []
@@ -71,15 +72,16 @@ async def get_long_term_memory(user_id: str, phone: str) -> dict:
     if not phone:
         return {}
     try:
-        conn = await get_db()
-        rows = await conn.fetch("""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
             SELECT memory_key, memory_value
             FROM customer_memories
             WHERE user_id = $1 AND phone = $2
             ORDER BY updated_at DESC
             LIMIT 50
         """, user_id, phone)
-        await conn.close()
+        conn.close()
         return {r['memory_key']: r['memory_value'] for r in rows}
     except Exception as e:
         print(f"[CONTEXT] get_long_term_memory error: {e}")
@@ -87,23 +89,26 @@ async def get_long_term_memory(user_id: str, phone: str) -> dict:
 
 async def get_workspace_sop(user_id: str) -> list:
     try:
-        conn = await get_db()
-        rows = await conn.fetch("""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
             SELECT sop_type, content
             FROM workspace_sop
             WHERE user_id = $1
         """, user_id)
-        await conn.close()
-        return [dict(r) for r in rows]
+        conn.close()
+        rows = c.fetchall()
+        return [dict(zip([d[0] for d in c.description], r)) for r in rows]
     except Exception as e:
         print(f"[CONTEXT] get_workspace_sop error: {e}")
         return []
 
 async def get_active_calendar_events(user_id: str) -> list:
     try:
-        conn = await get_db()
+        conn = get_db()
+        c = conn.cursor()
         now = datetime.utcnow()
-        rows = await conn.fetch("""
+        c.execute("""
             SELECT title, start_time, end_time, event_type
             FROM calendar_events
             WHERE user_id = $1
@@ -112,8 +117,9 @@ async def get_active_calendar_events(user_id: str) -> list:
             ORDER BY start_time ASC
             LIMIT 10
         """, user_id, now, now + timedelta(days=7))
-        await conn.close()
-        return [dict(r) for r in rows]
+        conn.close()
+        rows = c.fetchall()
+        return [dict(zip([d[0] for d in c.description], r)) for r in rows]
     except Exception as e:
         print(f"[CONTEXT] get_calendar_events error: {e}")
         return []
@@ -122,28 +128,32 @@ async def get_lead_state(user_id: str, phone: str) -> Optional[dict]:
     if not phone:
         return None
     try:
-        conn = await get_db()
-        row = await conn.fetchrow("""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
             SELECT phone, name, current_state, lead_score, last_contact, follow_up_count
             FROM leads
             WHERE user_id = $1 AND phone = $2
         """, user_id, phone)
-        await conn.close()
-        return dict(row) if row else None
+        conn.close()
+        row = c.fetchone()
+        return dict(zip([d[0] for d in c.description], row)) if row else None
     except Exception as e:
         print(f"[CONTEXT] get_lead_state error: {e}")
         return None
 
 async def get_user_profile(user_id: str) -> dict:
     try:
-        conn = await get_db()
-        row = await conn.fetchrow("""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute("""
             SELECT user_id, name, email, plan, business_name, business_context
             FROM users
             WHERE user_id = $1
         """, user_id)
-        await conn.close()
-        return dict(row) if row else {}
+        conn.close()
+        row = c.fetchone()
+        return dict(zip([d[0] for d in c.description], row)) if row else {}
     except Exception as e:
         print(f"[CONTEXT] get_user_profile error: {e}")
         return {}
@@ -154,7 +164,8 @@ async def update_lead_state(user_id: str, phone: str, new_state: str, metadata: 
     Lead lifecycle: NEW_LEAD → ASKED_PRICE → INTERESTED → NEGOTIATING → READY_TO_BUY → CLOSED
     """
     try:
-        conn = await get_db()
+        conn = get_db()
+        c = conn.cursor()
         
         # Get previous state
         existing = await conn.fetchrow("""
@@ -176,7 +187,7 @@ async def update_lead_state(user_id: str, phone: str, new_state: str, metadata: 
                 updated_at = NOW()
         """, user_id, phone, new_state, lead_score)
 
-        await conn.close()
+        conn.close()
 
         # Save memories
         if metadata.get('memories'):
@@ -197,14 +208,15 @@ async def update_lead_state(user_id: str, phone: str, new_state: str, metadata: 
 
 async def save_memory(user_id: str, phone: str, key: str, value: str):
     try:
-        conn = await get_db()
+        conn = get_db()
+        c = conn.cursor()
         await conn.execute("""
             INSERT INTO customer_memories (user_id, phone, memory_key, memory_value, updated_at)
             VALUES ($1, $2, $3, $4, NOW())
             ON CONFLICT (user_id, phone, memory_key)
             DO UPDATE SET memory_value = $4, updated_at = NOW()
         """, user_id, phone, key, value)
-        await conn.close()
+        conn.close()
     except Exception as e:
         print(f"[MEMORY] save_memory error: {e}")
 
