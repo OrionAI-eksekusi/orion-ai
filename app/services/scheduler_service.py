@@ -39,8 +39,10 @@ async def proactive_check():
         ).execute()
 
         headers = detail['payload']['headers']
-        sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
-        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+        sender = next((h['value']
+                      for h in headers if h['name'] == 'From'), 'Unknown')
+        subject = next((h['value']
+                       for h in headers if h['name'] == 'Subject'), '')
         sender_clean = sender.split('<')[0].strip().replace('"', '')
 
         await send_fcm_notification(
@@ -51,7 +53,6 @@ async def proactive_check():
     except Exception as e:
         logger.error(f"[PROACTIVE ERROR] {e}")
         logger.info(f"[PROACTIVE] Notif terkirim: {count} email baru")
-
 
 
 async def follow_up_check():
@@ -94,8 +95,8 @@ async def follow_up_check():
                 mark_follow_up_sent(phone)
             except Exception as e:
                 logger.error(f"[FOLLOWUP ERROR] {phone}: {e}")
-                logger.info(f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
-
+                logger.info(
+                    f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
 
     except Exception as e:
         logger.error(f"[FOLLOWUP CHECK ERROR] {e}")
@@ -143,12 +144,18 @@ async def brain_follow_up_check():
                     # ✅ Cari nomor WA dari notes menggunakan regex
                     phone_match = re.search(
                         r'(?:wa|whatsapp|hp|telp|phone|nomor)?[:\s]*(\+?62\d{8,13}|08\d{8,13})',
-                        notes, re.IGNORECASE
-                    )
+                        notes,
+                        re.IGNORECASE)
 
                     if phone_match:
                         phone = phone_match.group(1).strip()
-                        phone = phone.replace("+", "").replace("-", "").replace(" ", "")
+                        phone = phone.replace(
+                            "+",
+                            "").replace(
+                            "-",
+                            "").replace(
+                            " ",
+                            "")
                         if phone.startswith("0"):
                             phone = "62" + phone[1:]
                         elif not phone.startswith("62"):
@@ -163,16 +170,19 @@ async def brain_follow_up_check():
                         try:
                             send_whatsapp_baileys(phone, wa_msg)
                         except Exception as wa_err:
-                            logger.error(f"[BRAIN FOLLOWUP WA ERROR] {name}: {wa_err}")
-                            logger.info(f"[BRAIN FOLLOWUP] WA terkirim ke {name} ({phone})")
+                            logger.error(
+                                f"[BRAIN FOLLOWUP WA ERROR] {name}: {wa_err}")
+                            logger.info(
+                                f"[BRAIN FOLLOWUP] WA terkirim ke {name} ({phone})")
                     else:
+                        logger.info(
+                            f"[BRAIN FOLLOWUP] {name} tidak punya nomor WA di notes, skip kirim WA")
             except Exception as e:
                 logger.error(f"[BRAIN FOLLOWUP ERROR] user {user_id}: {e}")
-                        logger.info(f"[BRAIN FOLLOWUP] {name} tidak punya nomor WA di notes, skip kirim WA")
 
-                    mark_brain_follow_up_sent(user_id, name)
-                    logger.info(f"[BRAIN FOLLOWUP] Follow up selesai: {name} (user: {user_id})")
-
+                mark_brain_follow_up_sent(user_id, name)
+                logger.info(
+                    f"[BRAIN FOLLOWUP] Follow up selesai: {name} (user: {user_id})")
 
     except Exception as e:
         logger.error(f"[BRAIN FOLLOWUP CHECK ERROR] {e}")
@@ -203,7 +213,8 @@ async def payment_reminder_check():
             try:
                 due_invoices = get_due_invoices(user_id)
                 if not due_invoices:
-                    logger.info(f"[PAYMENT] Tidak ada invoice jatuh tempo untuk {user_id}")
+                    logger.info(
+                        f"[PAYMENT] Tidak ada invoice jatuh tempo untuk {user_id}")
                     continue
 
                 for inv in due_invoices:
@@ -250,7 +261,8 @@ async def payment_reminder_check():
                             send_whatsapp_baileys(phone, wa_msg)
                         except Exception as e:
                             logger.error(f"[PAYMENT WA ERROR] {e}")
-                            logger.info(f"[PAYMENT] WA reminder terkirim ke {name} ({phone})")
+                            logger.info(
+                                f"[PAYMENT] WA reminder terkirim ke {name} ({phone})")
 
                     increment_reminder_count(inv_number, user_id)
 
@@ -263,8 +275,9 @@ async def payment_reminder_check():
 
             except Exception as e:
                 logger.error(f"[PAYMENT ERROR] user {user_id}: {e}")
-                logger.info(f"[PAYMENT] {len(due_invoices)} reminder terkirim untuk {user_id}")
-
+                logger.info(
+                    f"[PAYMENT] {
+                        len(due_invoices)} reminder terkirim untuk {user_id}")
 
     except Exception as e:
         logger.error(f"[PAYMENT REMINDER ERROR] {e}")
@@ -316,8 +329,10 @@ async def daily_intelligence_briefing():
                     metadataHeaders=['From', 'Subject']
                 ).execute()
                 headers = detail['payload']['headers']
-                sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
-                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+                sender = next((h['value']
+                              for h in headers if h['name'] == 'From'), '')
+                subject = next(
+                    (h['value'] for h in headers if h['name'] == 'Subject'), '')
                 sender_clean = sender.split('<')[0].strip().replace('"', '')
                 urgent_emails.append(f"• {sender_clean}: {subject[:50]}")
         except Exception as e:
@@ -334,7 +349,8 @@ async def daily_intelligence_briefing():
             for e in events:
                 start = e.get("start", "")
                 if today in str(start):
-                    events_today.append(f"• {e.get('title', '')} — {start[11:16]}")
+                    events_today.append(
+                        f"• {e.get('title', '')} — {start[11:16]}")
         except Exception:
             pass
 
@@ -357,7 +373,8 @@ async def daily_intelligence_briefing():
             business_news = "• Pantau pergerakan kurs Rupiah hari ini\n• Cek update kebijakan ekspor terbaru"
 
         now = datetime.now()
-        day_id = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"][now.weekday()]
+        day_id = ["Senin", "Selasa", "Rabu", "Kamis",
+                  "Jumat", "Sabtu", "Minggu"][now.weekday()]
         date_str = now.strftime(f"{day_id}, %d %B %Y")
 
         users = get_all_active_users()
@@ -377,7 +394,8 @@ async def daily_intelligence_briefing():
                 pending = get_pending_follow_ups(user_id)
                 if pending:
                     names = [p["name"] for p in pending[:3]]
-                    brain_reminder = f"\n\n⏰ FOLLOW UP HARI INI:\n" + "\n".join([f"• {n}" for n in names])
+                    brain_reminder = f"\n\n⏰ FOLLOW UP HARI INI:\n" + \
+                        "\n".join([f"• {n}" for n in names])
             except Exception:
                 pass
 
@@ -389,7 +407,10 @@ async def daily_intelligence_briefing():
                 if due_invoices:
                     invoice_reminder = f"\n\n💰 TAGIHAN JATUH TEMPO:\n"
                     for inv in due_invoices[:3]:
-                        invoice_reminder += f"• {inv['customer_name']} — {format_amount(inv['amount'])}\n"
+                        invoice_reminder += f"• {
+                            inv['customer_name']} — {
+                            format_amount(
+                                inv['amount'])}\n"
             except Exception:
                 pass
 
@@ -432,12 +453,11 @@ Semangat hari ini! 💪🔥
                     send_whatsapp_baileys(user_phone, briefing_text)
             except Exception as e:
                 logger.error(f"[BRIEFING WA] {e}")
-                    logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
+                logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
 
     except Exception as e:
         logger.error(f"[BRIEFING ERROR] {e}")
         logger.info("[BRIEFING] Daily Intelligence Briefing selesai!")
-
 
 
 async def generate_weekly_report():
@@ -459,12 +479,14 @@ async def generate_weekly_report():
         customers = get_all_customers()
 
         urgent_count = len(briefing.get("urgent", []))
-        total_email = urgent_count + len(briefing.get("bisa_nanti", [])) + len(briefing.get("arsip", []))
+        total_email = urgent_count + \
+            len(briefing.get("bisa_nanti", [])) + len(briefing.get("arsip", []))
 
         tasks = tasks_data.get("tasks", [])
         done_tasks = [t for t in tasks if t.get("done")]
         pending_tasks = [t for t in tasks if not t.get("done")]
-        high_priority = [t for t in pending_tasks if t.get("priority") == "high"]
+        high_priority = [
+            t for t in pending_tasks if t.get("priority") == "high"]
 
         total_wa = len(wa_messages)
         replied_wa = len([m for m in wa_messages if m.get("replied")])
@@ -509,14 +531,13 @@ Orion AI 🤖""",
             )
     except Exception as e:
         logger.error(f"[REPORT ERROR] {e}")
-            logger.info(f"[REPORT] Laporan terkirim ke {boss_email}")
+        logger.info(f"[REPORT] Laporan terkirim ke {boss_email}")
 
         await send_fcm_notification(
             title="📊 Laporan Mingguan Siap!",
             body=f"Email: {total_email} | WA: {total_wa} | Task: {len(done_tasks)} selesai",
             data={"type": "report"}
         )
-
 
 
 async def _generate_report_pdf(
@@ -535,11 +556,12 @@ async def _generate_report_pdf(
         import os
 
         os.makedirs("/tmp/reports", exist_ok=True)
-        filename = f"/tmp/reports/laporan_{datetime.now().strftime('%Y%m%d%H%M')}.pdf"
+        filename = f"/tmp/reports/laporan_{
+            datetime.now().strftime('%Y%m%d%H%M')}.pdf"
 
         doc = SimpleDocTemplate(filename, pagesize=A4,
-            rightMargin=2*cm, leftMargin=2*cm,
-            topMargin=2*cm, bottomMargin=2*cm)
+                                rightMargin=2*cm, leftMargin=2*cm,
+                                topMargin=2*cm, bottomMargin=2*cm)
 
         primary = colors.HexColor("#1A3A8F")
         success = colors.HexColor("#2D8B4E")
@@ -554,14 +576,28 @@ async def _generate_report_pdf(
             "<font size='22' color='#1A3A8F'><b>📊 LAPORAN MINGGUAN</b></font>",
             ParagraphStyle("center", alignment=TA_CENTER)
         ))
-        story.append(Paragraph(
-            f"<font size='12' color='#6B7280'>Orion AI Execution System • {datetime.now().strftime('%d %B %Y %H:%M')}</font>",
-            ParagraphStyle("center", alignment=TA_CENTER)
-        ))
-        story.append(HRFlowable(width="100%", thickness=2, color=primary, spaceAfter=16))
+        story.append(
+            Paragraph(
+                f"<font size='12' color='#6B7280'>Orion AI Execution System • {
+                    datetime.now().strftime('%d %B %Y %H:%M')}</font>",
+                ParagraphStyle(
+                    "center",
+                    alignment=TA_CENTER)))
+        story.append(
+            HRFlowable(
+                width="100%",
+                thickness=2,
+                color=primary,
+                spaceAfter=16))
 
-        story.append(Paragraph("<b>📈 RINGKASAN</b>",
-            ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
+        story.append(
+            Paragraph(
+                "<b>📈 RINGKASAN</b>",
+                ParagraphStyle(
+                    "h2",
+                    fontSize=13,
+                    textColor=primary,
+                    spaceAfter=8)))
 
         summary_data = [
             ["📧 Total Email", "💬 WA Masuk", "✅ Task Selesai", "⏳ Task Pending"],
@@ -587,8 +623,14 @@ async def _generate_report_pdf(
         story.append(summary_table)
         story.append(Spacer(1, 0.5*cm))
 
-        story.append(Paragraph("<b>📧 ANALISA EMAIL</b>",
-            ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
+        story.append(
+            Paragraph(
+                "<b>📧 ANALISA EMAIL</b>",
+                ParagraphStyle(
+                    "h2",
+                    fontSize=13,
+                    textColor=primary,
+                    spaceAfter=8)))
         email_data = [
             ["Kategori", "Jumlah", "Status"],
             ["🔴 Urgent", str(urgent_count), "Perlu dibalas segera"],
@@ -609,8 +651,14 @@ async def _generate_report_pdf(
         story.append(email_table)
         story.append(Spacer(1, 0.5*cm))
 
-        story.append(Paragraph("<b>💬 ANALISA WHATSAPP</b>",
-            ParagraphStyle("h2", fontSize=13, textColor=success, spaceAfter=8)))
+        story.append(
+            Paragraph(
+                "<b>💬 ANALISA WHATSAPP</b>",
+                ParagraphStyle(
+                    "h2",
+                    fontSize=13,
+                    textColor=success,
+                    spaceAfter=8)))
         wa_rate = int((replied_wa/total_wa*100)) if total_wa > 0 else 0
         wa_data = [
             ["Metrik", "Nilai"],
@@ -634,8 +682,14 @@ async def _generate_report_pdf(
         story.append(Spacer(1, 0.5*cm))
 
         if high_priority:
-            story.append(Paragraph("<b>⚠️ TASK PRIORITAS TINGGI</b>",
-                ParagraphStyle("h2", fontSize=13, textColor=danger, spaceAfter=8)))
+            story.append(
+                Paragraph(
+                    "<b>⚠️ TASK PRIORITAS TINGGI</b>",
+                    ParagraphStyle(
+                        "h2",
+                        fontSize=13,
+                        textColor=danger,
+                        spaceAfter=8)))
             task_data = [["Task", "Dari", "Deadline"]]
             for t in high_priority[:5]:
                 task_data.append([
@@ -658,8 +712,14 @@ async def _generate_report_pdf(
             story.append(Spacer(1, 0.5*cm))
 
         if customers:
-            story.append(Paragraph("<b>👥 CUSTOMER AKTIF</b>",
-                ParagraphStyle("h2", fontSize=13, textColor=primary, spaceAfter=8)))
+            story.append(
+                Paragraph(
+                    "<b>👥 CUSTOMER AKTIF</b>",
+                    ParagraphStyle(
+                        "h2",
+                        fontSize=13,
+                        textColor=primary,
+                        spaceAfter=8)))
             cust_data = [["Nama", "Phone"]]
             for c in customers[:8]:
                 cust_data.append([
@@ -680,11 +740,19 @@ async def _generate_report_pdf(
             story.append(cust_table)
             story.append(Spacer(1, 0.5*cm))
 
-        story.append(HRFlowable(width="100%", thickness=0.5, color=gray, spaceAfter=6))
-        story.append(Paragraph(
-            f"<font size='9' color='#6B7280'>Laporan ini dibuat otomatis oleh Orion AI • {datetime.now().strftime('%d/%m/%Y %H:%M')} WIB</font>",
-            ParagraphStyle("center", alignment=TA_CENTER)
-        ))
+        story.append(
+            HRFlowable(
+                width="100%",
+                thickness=0.5,
+                color=gray,
+                spaceAfter=6))
+        story.append(
+            Paragraph(
+                f"<font size='9' color='#6B7280'>Laporan ini dibuat otomatis oleh Orion AI • {
+                    datetime.now().strftime('%d/%m/%Y %H:%M')} WIB</font>",
+                ParagraphStyle(
+                    "center",
+                    alignment=TA_CENTER)))
 
         doc.build(story)
     except Exception as e:
@@ -693,7 +761,6 @@ async def _generate_report_pdf(
         return filename
 
         return ""
-
 
 
 def start_scheduler():
@@ -740,7 +807,6 @@ def start_scheduler():
             replace_existing=True,
         )
 
-        
     except Exception as e:
         logger.error(f"[SCHEDULER ERROR] {e}")
     logger.info(
@@ -752,7 +818,6 @@ def start_scheduler():
         "  - Brain Follow Up: 08.00 pagi + WA otomatis ke kontak\n"
         "  - Payment Reminder: 09.00 pagi via Baileys"
     )
-
 
 
 def stop_scheduler():
