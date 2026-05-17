@@ -895,7 +895,7 @@ async def whatsapp_webhook(request: Request):
 
         try:
             from app.services.whatsapp_service import send_whatsapp_baileys
-            send_whatsapp_baileys(phone, reply_text)
+            send_whatsapp_baileys(phone, reply_text, user_id=user_id)
             mark_replied(phone)
         except Exception as send_err:
             print(f"[WA SEND ERROR] {send_err}")
