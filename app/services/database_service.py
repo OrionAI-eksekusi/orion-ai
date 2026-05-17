@@ -747,16 +747,12 @@ def extend_trial(user_id: str, days: int = 30):
 async def get_user_id_by_wa_session(phone: str) -> str:
     """Lookup user_id berdasarkan WA session — untuk multi-user routing"""
     try:
-        import asyncpg
-        import os
-        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-        row = await conn.fetchrow("""
-            SELECT user_id FROM wa_sessions 
-            WHERE phone = $1 AND is_active = true
-            LIMIT 1
-        """, phone)
-        await conn.close()
-        return row['user_id'] if row else None
+        conn, _ = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT user_id FROM wa_sessions WHERE phone = %s AND is_active = true LIMIT 1", (phone,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row else None
     except Exception as e:
         print(f"[DB] get_user_id_by_wa_session error: {e}")
         return None
