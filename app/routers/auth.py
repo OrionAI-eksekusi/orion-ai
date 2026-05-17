@@ -76,7 +76,11 @@ async def google_callback(code: str, state: str = "default"):
             # 4. Simpan Gmail token
             try:
                 from app.services.database_service import save_user_gmail_token
-                save_user_gmail_token(user_id, access_token, refresh_token)
+                scopes = tokens.get("scope", " ".join(SCOPES))
+                expires_in = tokens.get("expires_in", 3600)
+                from datetime import timedelta
+                token_expiry = datetime.now() + timedelta(seconds=expires_in)
+                save_user_gmail_token(user_id, access_token, refresh_token, scopes, token_expiry)
             except Exception as e:
                 print(f"Error saving gmail token: {e}")
 

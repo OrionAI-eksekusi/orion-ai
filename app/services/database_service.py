@@ -677,27 +677,21 @@ def get_fcm_token_db(user_id: str = 'default') -> str:
     except:
         return ""
 
-def save_user_gmail_token(user_id: str, access_token: str, id_token: str = ""):
+def save_user_gmail_token(user_id: str, access_token: str, refresh_token: str = "", scopes: str = "", token_expiry=None):
     """Simpan Gmail OAuth token per user"""
     try:
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
-            CREATE TABLE IF NOT EXISTS user_gmail_tokens (
-                user_id TEXT PRIMARY KEY,
-                access_token TEXT NOT NULL,
-                id_token TEXT DEFAULT '',
-                updated_at TIMESTAMP DEFAULT NOW()
-            )
-        ''')
-        c.execute('''
-            INSERT INTO user_gmail_tokens (user_id, access_token, id_token, updated_at)
-            VALUES (%s, %s, %s, NOW())
+            INSERT INTO user_gmail_tokens (user_id, access_token, refresh_token, scopes, token_expiry, updated_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
             ON CONFLICT(user_id) DO UPDATE SET
                 access_token = excluded.access_token,
-                id_token = excluded.id_token,
-                updated_at = excluded.updated_at
-        ''', (user_id, access_token, id_token))
+                refresh_token = COALESCE(excluded.refresh_token, user_gmail_tokens.refresh_token),
+                scopes = excluded.scopes,
+                token_expiry = excluded.token_expiry,
+                updated_at = NOW()
+        ''', (user_id, access_token, refresh_token, scopes, token_expiry))
         conn.commit()
         conn.close()
         print(f"[DB] Gmail token saved untuk {user_id}")

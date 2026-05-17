@@ -1,81 +1,125 @@
 import os
-import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import psycopg2
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-def get_calendar_service():
-    creds = None
-    token_json = os.getenv("GMAIL_TOKEN_JSON")
-    if token_json:
-        token_data = json.loads(token_json)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.events",
+]
+
+def get_user_credentials(user_id: str):
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT access_token, refresh_token, scopes, token_expiry
+            FROM user_gmail_tokens WHERE user_id = %s
+        """, (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not row:
+            return None, "NO_TOKEN"
+
+        access_token, refresh_token, scopes, token_expiry = row
+
+        if not refresh_token:
+            return None, "INSUFFICIENT_SCOPE"
+
+        stored_scopes = scopes or ""
+        if "auth/calendar" not in stored_scopes:
+            return None, "INSUFFICIENT_SCOPE"
+
         creds = Credentials(
-            token=token_data.get("token"),
-            refresh_token=token_data.get("refresh_token"),
-            token_uri=token_data.get("token_uri"),
-            client_id=token_data.get("client_id"),
-            client_secret=token_data.get("client_secret"),
-            scopes=token_data.get("scopes")
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.getenv("GOOGLE_CLIENT_ID"),
+            client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+            scopes=SCOPES,
         )
-    elif os.path.exists('token.json'):
-        from google.oauth2.credentials import Credentials as Creds
-        creds = Creds.from_authorized_user_file('token.json')
-    
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    
-    return build('calendar', 'v3', credentials=creds)
 
-def add_calendar_event(title: str, description: str, start_time: str, duration_hours: int = 1):
-    try:
-        service = get_calendar_service()
-        
-        # Parse waktu
-        try:
-            start = datetime.fromisoformat(start_time)
-        except:
-            start = datetime.now() + timedelta(days=1)
-        
-        end = start + timedelta(hours=duration_hours)
-        
-        event = {
-            'summary': title,
-            'description': description,
-            'start': {
-                'dateTime': start.isoformat(),
-                'timeZone': 'Asia/Jakarta',
-            },
-            'end': {
-                'dateTime': end.isoformat(),
-                'timeZone': 'Asia/Jakarta',
-            },
-            'reminders': {
-                'useDefault': False,
-                'overrides': [
-                    {'method': 'popup', 'minutes': 30},
-                    {'method': 'popup', 'minutes': 10},
-                ],
-            },
-        }
-        
-        event = service.events().insert(calendarId='primary', body=event).execute()
-        return {"status": "success", "event_id": event.get('id'), "link": event.get('htmlLink')}
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            _save_refreshed_token(user_id, creds.token)
+
+        return creds, None
+
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return None, str(e)
 
-def get_upcoming_events(max_results=10):
+
+def _save_refreshed_token(user_id: str, new_access_token: str):
     try:
-        service = get_calendar_service()
-        now = datetime.utcnow().isoformat() + 'Z'
-        events_result = service.events().list(
-            calendarId='primary',
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE user_gmail_tokens
+            SET access_token = %s, updated_at = NOW()
+            WHERE user_id = %s
+        """, (new_access_token, user_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"[CALENDAR] Error refresh token: {e}")
+
+
+def get_calendar_events(user_id: str, max_results: int = 10):
+    creds, error = get_user_credentials(user_id)
+    if error:
+        return {"error": error, "reauth_required": True, "events": []}
+
+    try:
+        service = build("calendar", "v3", credentials=creds)
+        now = datetime.now(timezone.utc).isoformat()
+        result = service.events().list(
+            calendarId="primary",
             timeMin=now,
             maxResults=max_results,
             singleEvents=True,
-            orderBy='startTime'
+            orderBy="startTime",
         ).execute()
-        events = events_result.get('items', [])
-        return [{"title": e.get('summary'), "start": e.get('start', {}).get('dateTime', ''), "link": e.get('htmlLink')} for e in events]
-    except Exception as e:
-        return []
+        events = result.get("items", [])
+        return {"events": events, "error": None, "reauth_required": False}
+
+    except HttpError as e:
+        if e.resp.status == 403:
+            return {"error": "INSUFFICIENT_SCOPE", "reauth_required": True, "events": []}
+        return {"error": str(e), "reauth_required": False, "events": []}
+
+
+def add_calendar_event(user_id: str, title: str, start: str, end: str, description: str = ""):
+    creds, error = get_user_credentials(user_id)
+    if error:
+        return {"error": error, "reauth_required": True}
+
+    try:
+        service = build("calendar", "v3", credentials=creds)
+        event = {
+            "summary": title,
+            "description": description,
+            "start": {"dateTime": start, "timeZone": "Asia/Jakarta"},
+            "end": {"dateTime": end, "timeZone": "Asia/Jakarta"},
+            "reminders": {
+                "useDefault": False,
+                "overrides": [
+                    {"method": "popup", "minutes": 30},
+                    {"method": "popup", "minutes": 10},
+                ],
+            },
+        }
+        result = service.events().insert(calendarId="primary", body=event).execute()
+        return {"event": result, "error": None, "reauth_required": False}
+
+    except HttpError as e:
+        if e.resp.status == 403:
+            return {"error": "INSUFFICIENT_SCOPE", "reauth_required": True}
+        return {"error": str(e), "reauth_required": False}
