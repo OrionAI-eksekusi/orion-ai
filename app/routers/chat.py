@@ -892,7 +892,8 @@ async def whatsapp_webhook(request: Request):
             reply_text = "Terima kasih atas pesan Anda. Kami akan segera membalas."
 
         try:
-            send_whatsapp(phone, reply_text)
+            from app.services.whatsapp_service import send_whatsapp_baileys
+            send_whatsapp_baileys(phone, reply_text)
             mark_replied(phone)
         except Exception as send_err:
             print(f"[WA SEND ERROR] {send_err}")
