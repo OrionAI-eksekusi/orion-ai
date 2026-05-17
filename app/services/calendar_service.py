@@ -123,3 +123,6 @@ def add_calendar_event(user_id: str, title: str, start: str, end: str, descripti
         if e.resp.status == 403:
             return {"error": "INSUFFICIENT_SCOPE", "reauth_required": True}
         return {"error": str(e), "reauth_required": False}
+
+# Alias untuk backward compatibility
+get_upcoming_events = get_calendar_events
