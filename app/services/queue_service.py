@@ -6,7 +6,7 @@ import arq
 from arq.connections import RedisSettings
 import os
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://default:dGSnGRIepyjJTRfZZvpmzxVTqzWmHbJl@redis.railway.internal:6379")
 
 def get_redis_settings() -> RedisSettings:
     return RedisSettings.from_dsn(REDIS_URL)
