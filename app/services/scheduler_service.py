@@ -696,10 +696,6 @@ async def _generate_report_pdf(
 
 
 
-async def run_follow_up_job():
-    from app.services.followup_service import run_follow_up
-    await run_follow_up()
-
 def start_scheduler():
     try:
         scheduler.add_job(
