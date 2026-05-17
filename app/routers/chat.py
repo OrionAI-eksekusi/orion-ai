@@ -1018,3 +1018,32 @@ async def trigger_briefing(request: Request):
         return {"status": "success", "message": "Briefing triggered!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ── Update Profile ───────────────────────────────────────
+@router.post("/update-profile")
+async def update_profile(request: Request):
+    try:
+        data = await request.json()
+        user_id = data.get("user_id")
+        phone = data.get("phone", "")
+        business_name = data.get("business_name", "")
+        business_context = data.get("business_context", "")
+        
+        from app.services.database_service import get_connection
+        conn, _ = get_connection()
+        c = conn.cursor()
+        c.execute("""
+            UPDATE users SET 
+                phone = %s,
+                business_name = %s,
+                business_context = %s,
+                updated_at = NOW()
+            WHERE user_id = %s
+        """, (phone, business_name, business_context, user_id))
+        conn.commit()
+        conn.close()
+        
+        print(f"[PROFILE] Updated for {user_id}")
+        return {"status": "success", "message": "Profile updated!"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
