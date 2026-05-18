@@ -22,9 +22,11 @@ async def lifespan(app: FastAPI):
         print(f"[STARTUP] ❌ DB init error: {e}")
     # Start ARQ worker sebagai background process
     import subprocess, sys, os
+    arq_env = os.environ.copy()
     arq_process = subprocess.Popen(
         [sys.executable, "-m", "arq", "app.workers.arq_worker.WorkerSettings"],
-        cwd=os.getcwd()
+        cwd=os.getcwd(),
+        env=arq_env
     )
     print("[STARTUP] ✅ ARQ worker started!")
     yield
