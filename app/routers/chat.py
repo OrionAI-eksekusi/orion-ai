@@ -948,7 +948,7 @@ async def debug_db():
         conn.close()
         return {"tables": tables, "db": "postgresql"}
     except Exception as e:
-        return {"error": str(e), "db_path": DB_PATH}
+        return {"error": str(e), "db": "postgresql"}
 
 
 @router.post("/admin/init-db")

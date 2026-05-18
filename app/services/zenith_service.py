@@ -1,4 +1,4 @@
-from app.services.database_service import get_connection, DB_PATH
+from app.services.database_service import get_connection
 """
 ZENITH — Enterprise Risk Intelligence System
 AI Governance & Forensic Audit Platform
@@ -13,7 +13,6 @@ import re
 from datetime import datetime, timedelta
 from app.services.ai_provider import call_llm
 
-DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 
 # ── Init Zenith DB ────────────────────────────────────────

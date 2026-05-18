@@ -40,8 +40,7 @@ def _build_creds_from_env() -> Credentials:
 
 def _save_token_to_db(creds: Credentials):
     try:
-        DB_PATH = os.getenv("DB_PATH", "orion.db")
-        token_data = {
+                token_data = {
             "token": creds.token,
             "refresh_token": creds.refresh_token,
             "token_uri": creds.token_uri,
@@ -74,8 +73,7 @@ def _save_token_to_db(creds: Credentials):
 
 def _load_token_from_db() -> Credentials:
     try:
-        DB_PATH = os.getenv("DB_PATH", "orion.db")
-        conn, _db_type = get_connection()
+                conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute("SELECT token_json FROM gmail_tokens WHERE id = 1")
         row = c.fetchone()

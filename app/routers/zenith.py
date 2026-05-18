@@ -208,8 +208,7 @@ async def reset_zenith_data(user_id: str):
         from app.services.zenith_service import init_zenith_db
         import sqlite3
         import os
-        DB_PATH = os.getenv("DB_PATH", "orion.db")
-        init_zenith_db()
+                init_zenith_db()
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute("DELETE FROM vendor_transactions WHERE user_id = %s", (user_id,))
@@ -397,7 +396,7 @@ async def add_market_price(request: Request):
         if secret != "orion-admin-2026":
             return {"status": "error", "message": "Unauthorized"}
         import sqlite3
-        from app.services.database_service import get_connection, DB_PATH
+        from app.services.database_service import get_connection
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute('''
@@ -424,7 +423,7 @@ async def list_market_prices(category: str = ""):
     """List semua data harga pasar"""
     try:
         import sqlite3
-        from app.services.database_service import get_connection, DB_PATH
+        from app.services.database_service import get_connection
         conn, _db_type = get_connection()
         c = conn.cursor()
         if category:
