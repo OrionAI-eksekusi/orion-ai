@@ -606,7 +606,7 @@ Maksimal 2-3 kalimat saja."""
             if not recipient_email and recipient_name:
                 from app.services.gmail_service import search_contact_email
                 from app.services.memory_service import get_all_customers
-                customers = get_all_customers()
+                customers = get_all_customers(user_id=user_id)
                 for c in customers:
                     if recipient_name.lower() in (c.get("name", "") or "").lower():
                         recipient_email = c.get("phone", "")
@@ -765,9 +765,8 @@ Maksimal 2-3 kalimat saja."""
     if is_email_command:
         try:
             from app.services.gmail_service import get_recent_emails
-            all_emails = get_recent_emails(max_results=10)
+            all_emails = get_recent_emails(max_results=10, user_id=user_id)
             emails = [e for e in all_emails if
-                'azvickyfadzry02@gmail.com' not in e.get('from', '') and
                 'noreply' not in e.get('from', '').lower() and
                 'whatsapp' not in e.get('from', '').lower() and
                 e.get('subject', '').strip() not in ['No Subject', '']
@@ -941,7 +940,7 @@ async def extract_tasks(user_id: str = 'default'):
 
     try:
         from app.services.database_service import get_wa_messages
-        wa_messages = get_wa_messages(limit=10)
+        wa_messages = get_wa_messages(limit=10, user_id=user_id)
     except Exception as e:
         print(f"[TASKS WA ERROR] {e}")
         wa_messages = []
@@ -983,12 +982,20 @@ Jika tidak ada task, kembalikan tasks sebagai array kosong."""
             if task.get("type") in ["meeting", "deadline"] and task.get("due"):
                 try:
                     from app.services.calendar_service import add_calendar_event
-                    add_calendar_event(
-                        title=task.get("title", ""),
-                        description=f"Dari: {task.get('from', '')}\n{task.get('detail', '')}",
-                        start_time=task.get("due", ""),
-                        duration_hours=1
-                    )
+                    from datetime import datetime, timedelta
+                    start_dt = task.get("due", "")
+                    try:
+                        start_obj = datetime.fromisoformat(start_dt)
+                        end_obj   = start_obj + timedelta(hours=1)
+                        add_calendar_event(
+                            user_id=user_id,
+                            title=task.get("title", ""),
+                            start=start_obj.isoformat(),
+                            end=end_obj.isoformat(),
+                            description=f"Dari: {task.get('from', '')}\n{task.get('detail', '')}"
+                        )
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
