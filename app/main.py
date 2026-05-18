@@ -20,7 +20,16 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] ✅ Database initialized!")
     except Exception as e:
         print(f"[STARTUP] ❌ DB init error: {e}")
+    # Start ARQ worker sebagai background process
+    import subprocess, sys, os
+    arq_process = subprocess.Popen(
+        [sys.executable, "-m", "arq", "app.workers.arq_worker.WorkerSettings"],
+        cwd=os.getcwd()
+    )
+    print("[STARTUP] ✅ ARQ worker started!")
     yield
+    arq_process.terminate()
+    print("[SHUTDOWN] ARQ worker stopped.")
 
 app = FastAPI(
     title="Orion AI",
