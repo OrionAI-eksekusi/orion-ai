@@ -56,48 +56,11 @@ async def proactive_check():
 
 
 async def follow_up_check():
-    """Cek customer WA yang belum dibalas — max 2x follow up"""
+    """Cek leads yang belum reply — delegasi ke followup_service"""
     try:
-        logger.info("[FOLLOWUP] Mengecek pesan yang belum dibalas...")
-        from app.services.database_service import get_unreplied_messages, mark_follow_up_sent
-        from app.services.whatsapp_service import send_whatsapp_baileys
-        from app.services.memory_service import get_customer_memory
-
-        unreplied = get_unreplied_messages(hours=24)
-        if not unreplied:
-            logger.info("[FOLLOWUP] Tidak ada pesan yang perlu follow up")
-            return
-
-        for msg in unreplied:
-            phone = msg["phone"]
-            follow_up_count = msg.get("follow_up_count", 0)
-
-            if follow_up_count >= 2:
-                logger.info(f"[FOLLOWUP] {phone} sudah 2x follow up, skip")
-                continue
-
-            try:
-                memory = get_customer_memory(phone)
-                name = memory.get("name", "") if memory else ""
-
-                if follow_up_count == 0:
-                    if name:
-                        follow_up = f"Halo {name}! 😊 Kami mau mastiin aja nih, ada yang bisa kami bantu lebih lanjut? Kami siap melayani kamu kapanpun! 🙏"
-                    else:
-                        follow_up = "Halo! 😊 Kami mau mastiin aja nih, ada yang bisa kami bantu lebih lanjut? Kami siap melayani kapanpun! 🙏"
-                else:
-                    if name:
-                        follow_up = f"Halo {name}, just checking in nih 😊 Kalau ada yang mau ditanyain atau butuh bantuan, kami selalu siap ya! 🙏"
-                    else:
-                        follow_up = "Halo! Just checking in nih 😊 Kalau ada yang mau ditanyain atau butuh bantuan, kami selalu siap ya! 🙏"
-
-                send_whatsapp_baileys(phone, follow_up)
-                mark_follow_up_sent(phone)
-            except Exception as e:
-                logger.error(f"[FOLLOWUP ERROR] {phone}: {e}")
-                logger.info(
-                    f"[FOLLOWUP] Follow up ke-{follow_up_count+1} terkirim ke {phone}")
-
+        logger.info("[FOLLOWUP] Menjalankan follow up service...")
+        from app.services.followup_service import run_follow_up
+        await run_follow_up()
     except Exception as e:
         logger.error(f"[FOLLOWUP CHECK ERROR] {e}")
 
