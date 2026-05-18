@@ -20,17 +20,19 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] ✅ Database initialized!")
     except Exception as e:
         print(f"[STARTUP] ❌ DB init error: {e}")
-    # Start ARQ worker sebagai background process
-    import subprocess, sys, os
-    arq_env = os.environ.copy()
-    arq_process = subprocess.Popen(
-        [sys.executable, "-m", "arq", "app.workers.arq_worker.WorkerSettings"],
-        cwd=os.getcwd(),
-        env=arq_env
-    )
+    # Start ARQ worker sebagai asyncio task
+    import asyncio
+    from arq.worker import create_worker
+    from app.workers.arq_worker import WorkerSettings
+
+    async def run_worker():
+        worker = create_worker(WorkerSettings)
+        await worker.async_run()
+
+    arq_task = asyncio.create_task(run_worker())
     print("[STARTUP] ✅ ARQ worker started!")
     yield
-    arq_process.terminate()
+    arq_task.cancel()
     print("[SHUTDOWN] ARQ worker stopped.")
 
 app = FastAPI(
