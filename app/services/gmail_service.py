@@ -1,7 +1,6 @@
 import os
 import json
 import base64
-import sqlite3
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -9,9 +8,6 @@ from email import encoders
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from dotenv import load_dotenv
-
-load_dotenv()
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
@@ -115,19 +111,16 @@ def _get_valid_creds() -> Credentials:
 
 
 def _get_user_creds(user_id: str) -> Credentials:
-    """Ambil credentials untuk user tertentu — multi-user support"""
+    """Ambil credentials per user dari DB — multi-tenant"""
     try:
-        from app.services.database_service import get_connection, get_user_gmail_token
         user_token = get_user_gmail_token(user_id)
         if user_token and user_token.get('access_token'):
-            # Ambil client_id dan client_secret dari env
-            base_token = json.loads(os.getenv("GMAIL_TOKEN_JSON", "{}"))
             creds = Credentials(
                 token=user_token['access_token'],
-                refresh_token=base_token.get('refresh_token', ''),
+                refresh_token=user_token.get('refresh_token', ''),
                 token_uri='https://oauth2.googleapis.com/token',
-                client_id=base_token.get('client_id', ''),
-                client_secret=base_token.get('client_secret', ''),
+                client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+                client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
                 scopes=SCOPES
             )
             if creds.expired and creds.refresh_token:
@@ -135,7 +128,6 @@ def _get_user_creds(user_id: str) -> Credentials:
             return creds
     except Exception as e:
         print(f"[GMAIL] Error get user creds: {e}")
-    # Fallback ke default
     return _get_valid_creds()
 
 
