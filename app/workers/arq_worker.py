@@ -5,7 +5,11 @@ from arq.cron import cron
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", os.getenv("REDIS_PUBLIC_URL", "redis://localhost:6379"))
+REDIS_URL = (
+    os.environ.get("REDIS_URL") or
+    os.environ.get("REDIS_PUBLIC_URL") or
+    "redis://localhost:6379"
+)
 
 
 # ─── JOBS ────────────────────────────────────────────
@@ -77,7 +81,9 @@ async def startup(ctx):
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(
-        os.getenv("REDIS_URL", os.getenv("REDIS_PUBLIC_URL", "redis://localhost:6379"))
+        os.environ.get("REDIS_URL") or
+        os.environ.get("REDIS_PUBLIC_URL") or
+        "redis://localhost:6379"
     )
     on_startup = startup
     functions = [
