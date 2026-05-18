@@ -40,7 +40,7 @@ def _build_creds_from_env() -> Credentials:
 
 def _save_token_to_db(creds: Credentials):
     try:
-                token_data = {
+        token_data = {
             "token": creds.token,
             "refresh_token": creds.refresh_token,
             "token_uri": creds.token_uri,
@@ -48,36 +48,33 @@ def _save_token_to_db(creds: Credentials):
             "client_secret": creds.client_secret,
             "scopes": list(creds.scopes) if creds.scopes else SCOPES
         }
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute('''
-            CREATE TABLE IF NOT EXISTS gmail_tokens (
-                id INTEGER PRIMARY KEY,
-                token_json TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT NOW()
-            )
-        ''')
-        c.execute('''
-            INSERT INTO gmail_tokens (id, token_json, updated_at)
-            VALUES (1, %s, NOW())
-            ON CONFLICT(id) DO UPDATE SET
-                token_json = excluded.token_json,
-                updated_at = excluded.updated_at
-        ''', (json.dumps(token_data),))
-        conn.commit()
-        conn.close()
-        print("[GMAIL] ✅ Token disimpan ke DB")
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO gmail_tokens (id, token_json, updated_at)
+                VALUES (1, %s, NOW())
+                ON CONFLICT(id) DO UPDATE SET
+                    token_json = excluded.token_json,
+                    updated_at = excluded.updated_at
+            ''', (json.dumps(token_data),))
+            conn.commit()
+            print("[GMAIL] ✅ Token disimpan ke DB")
+        finally:
+            conn.close()
     except Exception as e:
         print(f"[GMAIL] ❌ Gagal simpan token: {e}")
 
 
 def _load_token_from_db() -> Credentials:
     try:
-                conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute("SELECT token_json FROM gmail_tokens WHERE id = 1")
-        row = c.fetchone()
-        conn.close()
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute("SELECT token_json FROM gmail_tokens WHERE id = 1")
+            row = c.fetchone()
+        finally:
+            conn.close()
         if row:
             token_data = json.loads(row[0])
             return Credentials(
