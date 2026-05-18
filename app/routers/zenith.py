@@ -206,9 +206,7 @@ async def reset_zenith_data(user_id: str):
     """Reset semua data Zenith user — untuk hapus data test"""
     try:
         from app.services.zenith_service import init_zenith_db
-        import sqlite3
-        import os
-                init_zenith_db()
+        init_zenith_db()
         conn, _db_type = get_connection()
         c = conn.cursor()
         c.execute("DELETE FROM vendor_transactions WHERE user_id = %s", (user_id,))
