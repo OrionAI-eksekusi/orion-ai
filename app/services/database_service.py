@@ -1,34 +1,22 @@
-import sqlite3
 import os
 import json
 from datetime import datetime, timedelta
 
-DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 
 def get_connection():
-    """Ambil koneksi database — PostgreSQL kalau ada, SQLite kalau tidak"""
+    """Ambil koneksi PostgreSQL — satu-satunya database yang dipakai"""
     database_url = os.getenv("DATABASE_URL", "")
-    if database_url and database_url.startswith("postgresql"):
-        try:
-            import psycopg2
-            print(f"[DB] Connecting to PostgreSQL: {database_url[:30]}...")
-            conn = psycopg2.connect(database_url)
-            conn.autocommit = True
-            print("[DB] ✅ PostgreSQL connected!")
-            return conn, "postgres"
-        except Exception as e:
-            print(f"[DB] ❌ PostgreSQL gagal: {e} — fallback SQLite")
-    conn, _db_type = get_connection()
-    return conn, "sqlite"
+    if not database_url:
+        raise RuntimeError("[DB] DATABASE_URL tidak ditemukan di environment!")
+    import psycopg2
+    conn = psycopg2.connect(database_url)
+    conn.autocommit = True
+    return conn, "postgresql"
 
 def init_db():
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    conn, _db_type = get_connection()
+    conn, _ = get_connection()
     c = conn.cursor()
-
     # ── Tabel WA Messages ──
     c.execute('''
         CREATE TABLE IF NOT EXISTS wa_messages (
@@ -174,15 +162,17 @@ def save_user_profile(user_id: str, name: str, email: str, phone: str,
 
 
 def get_user_profile(user_id: str) -> dict:
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token,
-               plan, trial_start, trial_end, daily_commands, total_commands
-        FROM user_profiles WHERE user_id = %s
-    ''', (user_id,))
-    row = c.fetchone()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token,
+                   plan, trial_start, trial_end, daily_commands, total_commands
+            FROM user_profiles WHERE user_id = %s
+        ''', (user_id,))
+        row = c.fetchone()
+    finally:
+        conn.close()
     if not row:
         return {}
     return {
@@ -195,14 +185,16 @@ def get_user_profile(user_id: str) -> dict:
 
 
 def get_all_active_users() -> list:
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token
-        FROM user_profiles WHERE is_active = 1
-    ''')
-    rows = c.fetchall()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT user_id, name, email, phone, city, briefing_hour, fcm_token, gmail_token
+            FROM user_profiles WHERE is_active = 1
+        ''')
+        rows = c.fetchall()
+    finally:
+        conn.close()
     return [{
         "user_id": r[0], "name": r[1], "email": r[2],
         "phone": r[3], "city": r[4], "briefing_hour": r[5],
@@ -211,68 +203,69 @@ def get_all_active_users() -> list:
 
 
 def update_user_fcm_token(user_id: str, fcm_token: str):
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE user_profiles SET fcm_token = %s, updated_at = %s
-        WHERE user_id = %s
-    ''', (fcm_token, datetime.now().isoformat(), user_id))
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE user_profiles SET fcm_token = %s, updated_at = %s
+            WHERE user_id = %s
+        ''', (fcm_token, datetime.now().isoformat(), user_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def update_user_gmail_token(user_id: str, gmail_token: str):
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE user_profiles SET gmail_token = %s, updated_at = %s
-        WHERE user_id = %s
-    ''', (gmail_token, datetime.now().isoformat(), user_id))
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE user_profiles SET gmail_token = %s, updated_at = %s
+            WHERE user_id = %s
+        ''', (gmail_token, datetime.now().isoformat(), user_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ── Plan & Trial Functions ─────────────────────────────
 
 def init_user_plan(user_id: str):
     """Set trial 3 hari saat user pertama kali daftar"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-
-    # Cek apakah sudah punya trial
-    c.execute("SELECT trial_start FROM user_profiles WHERE user_id = %s", (user_id,))
-    row = c.fetchone()
-
-    if row and row[0]:
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT trial_start FROM user_profiles WHERE user_id = %s", (user_id,))
+        row = c.fetchone()
+        if row and row[0]:
+            return
+        now = datetime.now()
+        trial_end = now + timedelta(days=3)
+        c.execute("""
+            UPDATE user_profiles SET
+                plan = 'trial',
+                trial_start = %s,
+                trial_end = %s,
+                updated_at = %s
+            WHERE user_id = %s
+        """, (now.isoformat(), trial_end.isoformat(), now.isoformat(), user_id))
+        conn.commit()
+        print(f"[PLAN] Trial dimulai untuk {user_id}")
+    finally:
         conn.close()
-        return  # Sudah punya trial, skip
-
-    now = datetime.now()
-    trial_end = now + timedelta(days=3)
-
-    c.execute('''
-        UPDATE user_profiles SET
-            plan = 'trial',
-            trial_start = %s,
-            trial_end = %s,
-            updated_at = %s
-        WHERE user_id = %s
-    ''', (now.isoformat(), trial_end.isoformat(), now.isoformat(), user_id))
-    conn.commit()
-    conn.close()
-    print(f"[PLAN] Trial 3 hari dimulai untuk {user_id} — berakhir {trial_end.strftime('%d %b %Y')}")
-
 
 def get_user_plan(user_id: str) -> dict:
     """Ambil info plan user — trial/free/apex/zenith"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT plan, trial_start, trial_end, daily_commands, daily_reset_date, total_commands
-        FROM user_profiles WHERE user_id = %s
-    ''', (user_id,))
-    row = c.fetchone()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT plan, trial_start, trial_end, daily_commands, daily_reset_date, total_commands
+            FROM user_profiles WHERE user_id = %s
+        ''', (user_id,))
+        row = c.fetchone()
+    finally:
+        conn.close()
 
     if not row:
         return {
@@ -342,153 +335,174 @@ def get_user_plan(user_id: str) -> dict:
 def _set_plan(user_id: str, plan: str):
     """Internal: update plan di DB"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute(
-            "UPDATE user_profiles SET plan = %s, updated_at = %s WHERE user_id = %s",
-            (plan, datetime.now().isoformat(), user_id)
-        )
-        conn.commit()
-        conn.close()
-    except:
-        pass
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "UPDATE user_profiles SET plan = %s, updated_at = %s WHERE user_id = %s",
+                (plan, datetime.now().isoformat(), user_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[PLAN] _set_plan error: {e}")
 
 
 def _reset_daily_commands(user_id: str, today: str):
     """Reset counter harian tiap tengah malam"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute('''
-            UPDATE user_profiles SET
-                daily_commands = 0,
-                daily_reset_date = %s,
-                updated_at = %s
-            WHERE user_id = %s
-        ''', (today, datetime.now().isoformat(), user_id))
-        conn.commit()
-        conn.close()
-    except:
-        pass
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute('''
+                UPDATE user_profiles SET
+                    daily_commands = 0,
+                    daily_reset_date = %s,
+                    updated_at = %s
+                WHERE user_id = %s
+            ''', (today, datetime.now().isoformat(), user_id))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f'[DB] _reset_daily_commands error: {e}')
 
 
 def increment_daily_commands(user_id: str):
     """Tambah counter perintah harian + total"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        today = datetime.now().strftime("%Y-%m-%d")
-        c.execute('''
-            UPDATE user_profiles SET
-                daily_commands = daily_commands + 1,
-                total_commands = total_commands + 1,
-                daily_reset_date = %s,
-                updated_at = %s
-            WHERE user_id = %s
-        ''', (today, datetime.now().isoformat(), user_id))
-        conn.commit()
-        conn.close()
-    except:
-        pass
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            today = datetime.now().strftime("%Y-%m-%d")
+            c.execute('''
+                UPDATE user_profiles SET
+                    daily_commands = daily_commands + 1,
+                    total_commands = total_commands + 1,
+                    daily_reset_date = %s,
+                    updated_at = %s
+                WHERE user_id = %s
+            ''', (today, datetime.now().isoformat(), user_id))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f'[DB] increment_daily_commands error: {e}')
 
 
 def upgrade_user_plan(user_id: str, plan: str):
     """Upgrade plan user ke apex/zenith"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE user_profiles SET
-            plan = %s,
-            updated_at = %s
-        WHERE user_id = %s
-    ''', (plan, datetime.now().isoformat(), user_id))
-    conn.commit()
-    conn.close()
-    print(f"[PLAN] {user_id} upgraded ke {plan.upper()}")
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE user_profiles SET
+                plan = %s,
+                updated_at = %s
+            WHERE user_id = %s
+        ''', (plan, datetime.now().isoformat(), user_id))
+        conn.commit()
+        print(f"[PLAN] {user_id} upgraded ke {plan.upper()}")
+    finally:
+        conn.close()
 
 
 # ── WA Message Functions ───────────────────────────────
 
 def save_wa_message(phone: str, message: str, user_id: str = 'default'):
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute(
-        "INSERT INTO wa_messages (user_id, phone, message, received_at, received_timestamp) VALUES (%s, %s, %s, %s, %s)",
-        (user_id, phone, message, datetime.now(), datetime.now().isoformat())
-    )
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO wa_messages (user_id, phone, message, received_at, received_timestamp) VALUES (%s, %s, %s, %s, %s)",
+            (user_id, phone, message, datetime.now(), datetime.now().isoformat())
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_wa_messages(limit=10, user_id: str = 'default'):
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute(
-        "SELECT phone, message, received_at, replied FROM wa_messages WHERE user_id=%s ORDER BY id DESC LIMIT %s",
-        (user_id, limit)
-    )
-    rows = c.fetchall()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT phone, message, received_at, replied FROM wa_messages WHERE user_id=%s ORDER BY id DESC LIMIT %s",
+            (user_id, limit)
+        )
+        rows = c.fetchall()
+    finally:
+        conn.close()
     return [{"phone": r[0], "message": r[1], "time": r[2], "replied": bool(r[3])} for r in rows]
 
 
 def mark_replied(phone: str, user_id: str = 'default'):
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute(
-        "UPDATE wa_messages SET replied=1 WHERE phone=%s AND user_id=%s AND replied=0",
-        (phone, user_id)
-    )
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "UPDATE wa_messages SET replied=1 WHERE phone=%s AND user_id=%s AND replied=0",
+            (phone, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_unreplied_messages(hours: int = 24, user_id: str = 'default'):
     """Ambil pesan belum dibalas — max follow up 2x"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT DISTINCT phone, message, received_timestamp, follow_up_count
-        FROM wa_messages
-        WHERE user_id = %s
-        AND replied = 0
-        AND follow_up_count < 2
-        AND received_timestamp IS NOT NULL
-        AND (julianday('now') - julianday(received_timestamp)) * 24 >= %s
-        ORDER BY received_timestamp ASC
-    ''', (user_id, hours))
-    rows = c.fetchall()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT DISTINCT phone, message, received_timestamp, follow_up_count
+            FROM wa_messages
+            WHERE user_id = %s
+            AND replied = 0
+            AND follow_up_count < 2
+            AND received_timestamp IS NOT NULL
+            AND received_timestamp < NOW() - INTERVAL '1 hour' * %s
+            ORDER BY received_timestamp ASC
+        ''', (user_id, hours))
+        rows = c.fetchall()
+    finally:
+        conn.close()
     return [{"phone": r[0], "message": r[1], "received_at": r[2], "follow_up_count": r[3]} for r in rows]
 
 
 def mark_follow_up_sent(phone: str, user_id: str = 'default'):
     """Tandai follow up terkirim — increment counter"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE wa_messages
-        SET follow_up_sent=1,
-            follow_up_count=follow_up_count+1
-        WHERE phone=%s AND user_id=%s AND replied=0
-    ''', (phone, user_id))
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE wa_messages
+            SET follow_up_sent=1,
+                follow_up_count=follow_up_count+1
+            WHERE phone=%s AND user_id=%s AND replied=0
+        ''', (phone, user_id))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_follow_up_count(phone: str, user_id: str = 'default') -> int:
     """Cek sudah berapa kali follow up ke nomor ini"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute('''
-            SELECT MAX(follow_up_count) FROM wa_messages
-            WHERE phone=%s AND user_id=%s
-        ''', (phone, user_id))
-        row = c.fetchone()
-        conn.close()
-        return row[0] or 0
-    except:
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute('''
+                SELECT MAX(follow_up_count) FROM wa_messages
+                WHERE phone=%s AND user_id=%s
+            ''', (phone, user_id))
+            row = c.fetchone()
+            return row[0] or 0
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[DB] get_follow_up_count error: {e}")
         return 0
 
 
@@ -498,29 +512,25 @@ def save_brain_entry(user_id: str, entity_name: str, notes: str,
                       entity_type: str = 'contact', details: dict = {},
                       follow_up_date: str = ''):
     """Simpan atau update entri di Personal Brain"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        INSERT INTO personal_brain
-            (user_id, entity_name, entity_type, notes, details, follow_up_date, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT DO NOTHING
-    ''', (user_id, entity_name, entity_type, notes,
-          json_dumps(details), follow_up_date, datetime.now().isoformat()))
-
-    c.execute('''
-        UPDATE personal_brain SET
-            notes = notes || char(10) || %s,
-            details = %s,
-            follow_up_date = CASE WHEN %s != '' THEN %s ELSE follow_up_date END,
-            updated_at = %s
-        WHERE user_id = %s AND entity_name = %s AND id != last_insert_rowid()
-    ''', (notes, json_dumps(details), follow_up_date, follow_up_date,
-          datetime.now().isoformat(), user_id, entity_name))
-
-    conn.commit()
-    conn.close()
-
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        now = datetime.now().isoformat()
+        c.execute("""
+            INSERT INTO personal_brain
+                (user_id, entity_name, entity_type, notes, details, follow_up_date, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, entity_name) DO UPDATE SET
+                notes = personal_brain.notes || chr(10) || %s,
+                details = %s,
+                follow_up_date = CASE WHEN %s != '' THEN %s ELSE personal_brain.follow_up_date END,
+                updated_at = %s
+        """, (user_id, entity_name, entity_type, notes,
+              json.dumps(details), follow_up_date, now,
+              notes, json.dumps(details), follow_up_date, follow_up_date, now))
+        conn.commit()
+    finally:
+        conn.close()
 
 def get_brain_entry(user_id: str, entity_name: str) -> dict:
     """Cari entri di Personal Brain"""
@@ -547,17 +557,19 @@ def get_brain_entry(user_id: str, entity_name: str) -> dict:
 
 def get_all_brain_entries(user_id: str) -> list:
     """Ambil semua entri Personal Brain"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT entity_name, entity_type, notes, follow_up_date,
-               follow_up_done, last_contact, updated_at
-        FROM personal_brain
-        WHERE user_id = %s
-        ORDER BY updated_at DESC
-    ''', (user_id,))
-    rows = c.fetchall()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, follow_up_date,
+                   follow_up_done, last_contact, updated_at
+            FROM personal_brain
+            WHERE user_id = %s
+            ORDER BY updated_at DESC
+        ''', (user_id,))
+        rows = c.fetchall()
+    finally:
+        conn.close()
     return [{
         "name": r[0], "type": r[1], "notes": r[2],
         "follow_up_date": r[3], "follow_up_done": bool(r[4]),
@@ -568,20 +580,22 @@ def get_all_brain_entries(user_id: str) -> list:
 def get_pending_follow_ups(user_id: str) -> list:
     """Ambil follow up yang sudah jatuh tempo"""
     today = datetime.now().strftime("%Y-%m-%d")
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
-        FROM personal_brain
-        WHERE user_id = %s
-        AND follow_up_done = 0
-        AND follow_up_date != ''
-        AND follow_up_date <= %s
-        AND follow_up_count < 2
-        ORDER BY follow_up_date ASC
-    ''', (user_id, today))
-    rows = c.fetchall()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, follow_up_date, follow_up_count
+            FROM personal_brain
+            WHERE user_id = %s
+            AND follow_up_done = 0
+            AND follow_up_date != ''
+            AND follow_up_date <= %s
+            AND follow_up_count < 2
+            ORDER BY follow_up_date ASC
+        ''', (user_id, today))
+        rows = c.fetchall()
+    finally:
+        conn.close()
     return [{
         "name": r[0], "type": r[1], "notes": r[2],
         "follow_up_date": r[3], "follow_up_count": r[4]
@@ -590,19 +604,21 @@ def get_pending_follow_ups(user_id: str) -> list:
 
 def mark_brain_follow_up_done(user_id: str, entity_name: str):
     """Tandai follow up selesai"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        UPDATE personal_brain SET
-            follow_up_done = 1,
-            follow_up_count = follow_up_count + 1,
-            last_contact = %s,
-            updated_at = %s
-        WHERE user_id = %s AND entity_name = %s
-    ''', (datetime.now().isoformat(), datetime.now().isoformat(),
-          user_id, entity_name))
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            UPDATE personal_brain SET
+                follow_up_done = 1,
+                follow_up_count = follow_up_count + 1,
+                last_contact = %s,
+                updated_at = %s
+            WHERE user_id = %s AND entity_name = %s
+        ''', (datetime.now().isoformat(), datetime.now().isoformat(),
+              user_id, entity_name))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def mark_brain_follow_up_sent(user_id: str, entity_name: str):
@@ -612,21 +628,23 @@ def mark_brain_follow_up_sent(user_id: str, entity_name: str):
 
 def search_brain(user_id: str, query: str) -> list:
     """Cari di Personal Brain"""
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        SELECT entity_name, entity_type, notes, follow_up_date,
-               follow_up_done, last_contact
-        FROM personal_brain
-        WHERE user_id = %s AND (
-            entity_name LIKE %s OR
-            notes LIKE %s OR
-            entity_type LIKE %s
-        )
-        ORDER BY updated_at DESC LIMIT 10
-    ''', (user_id, f'%{query}%', f'%{query}%', f'%{query}%'))
-    rows = c.fetchall()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute('''
+            SELECT entity_name, entity_type, notes, follow_up_date,
+                   follow_up_done, last_contact
+            FROM personal_brain
+            WHERE user_id = %s AND (
+                entity_name ILIKE %s OR
+                notes ILIKE %s OR
+                entity_type ILIKE %s
+            )
+            ORDER BY updated_at DESC LIMIT 10
+        ''', (user_id, f'%{query}%', f'%{query}%', f'%{query}%'))
+        rows = c.fetchall()
+    finally:
+        conn.close()
     return [{
         "name": r[0], "type": r[1], "notes": r[2],
         "follow_up_date": r[3], "follow_up_done": bool(r[4]),
@@ -644,57 +662,59 @@ def json_dumps(data: dict) -> str:
 # ── FCM Token Functions ────────────────────────────────
 
 def save_fcm_token_db(token: str, user_id: str = 'default'):
-    conn, _db_type = get_connection()
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS fcm_tokens
-        (id INTEGER PRIMARY KEY, user_id TEXT, token TEXT UNIQUE,
-         created_at TIMESTAMP DEFAULT NOW())
-    ''')
-    c.execute(
-        "INSERT INTO fcm_tokens (user_id, token) VALUES (%s, %s)",
-        (user_id, token)
-    )
-    c.execute(
-        "UPDATE user_profiles SET fcm_token=%s WHERE user_id=%s",
-        (token, user_id)
-    )
-    conn.commit()
-    conn.close()
+    conn, _ = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO fcm_tokens (user_id, token) VALUES (%s, %s) ON CONFLICT (token) DO NOTHING",
+            (user_id, token)
+        )
+        c.execute(
+            "UPDATE user_profiles SET fcm_token=%s WHERE user_id=%s",
+            (token, user_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_fcm_token_db(user_id: str = 'default') -> str:
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute(
-            "SELECT token FROM fcm_tokens WHERE user_id=%s ORDER BY id DESC LIMIT 1",
-            (user_id,)
-        )
-        row = c.fetchone()
-        conn.close()
-        return row[0] if row else ""
-    except:
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                "SELECT token FROM fcm_tokens WHERE user_id=%s ORDER BY id DESC LIMIT 1",
+                (user_id,)
+            )
+            row = c.fetchone()
+            return row[0] if row else ""
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[DB] get_fcm_token_db error: {e}")
         return ""
 
 def save_user_gmail_token(user_id: str, access_token: str, refresh_token: str = "", scopes: str = "", token_expiry=None):
     """Simpan Gmail OAuth token per user"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute('''
-            INSERT INTO user_gmail_tokens (user_id, access_token, refresh_token, scopes, token_expiry, updated_at)
-            VALUES (%s, %s, %s, %s, %s, NOW())
-            ON CONFLICT(user_id) DO UPDATE SET
-                access_token = excluded.access_token,
-                refresh_token = COALESCE(excluded.refresh_token, user_gmail_tokens.refresh_token),
-                scopes = excluded.scopes,
-                token_expiry = excluded.token_expiry,
-                updated_at = NOW()
-        ''', (user_id, access_token, refresh_token, scopes, token_expiry))
-        conn.commit()
-        conn.close()
-        print(f"[DB] Gmail token saved untuk {user_id}")
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute('''
+                INSERT INTO user_gmail_tokens (user_id, access_token, refresh_token, scopes, token_expiry, updated_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+                ON CONFLICT(user_id) DO UPDATE SET
+                    access_token = excluded.access_token,
+                    refresh_token = COALESCE(excluded.refresh_token, user_gmail_tokens.refresh_token),
+                    scopes = excluded.scopes,
+                    token_expiry = excluded.token_expiry,
+                    updated_at = NOW()
+            ''', (user_id, access_token, refresh_token, scopes, token_expiry))
+            conn.commit()
+            print(f"[DB] Gmail token saved untuk {user_id}")
+        finally:
+            conn.close()
     except Exception as e:
         print(f"[DB] Save gmail token error: {e}")
 
@@ -702,14 +722,16 @@ def save_user_gmail_token(user_id: str, access_token: str, refresh_token: str = 
 def get_user_gmail_token(user_id: str) -> dict:
     """Ambil Gmail token user"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        c.execute('''
-            SELECT access_token, id_token, updated_at
-            FROM user_gmail_tokens WHERE user_id = %s
-        ''', (user_id,))
-        row = c.fetchone()
-        conn.close()
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            c.execute('''
+                SELECT access_token, id_token, updated_at
+                FROM user_gmail_tokens WHERE user_id = %s
+            ''', (user_id,))
+            row = c.fetchone()
+        finally:
+            conn.close()
         if row:
             return {"access_token": row[0], "id_token": row[1], "updated_at": row[2]}
         return {}
@@ -721,32 +743,32 @@ def get_user_gmail_token(user_id: str) -> dict:
 def extend_trial(user_id: str, days: int = 30):
     """Extend trial user"""
     try:
-        conn, _db_type = get_connection()
-        c = conn.cursor()
-        # Cek kolom yang ada
-        from datetime import datetime, timedelta
-        new_end = (datetime.now() + timedelta(days=days)).isoformat()
-        c.execute("UPDATE user_profiles SET trial_end = %s, plan = 'trial', updated_at = %s WHERE user_id = %s", 
-                  (new_end, datetime.now().isoformat(), user_id))
-        print(f"[DB] Rows updated: {c.rowcount}")
-        
-        print(f"[DB] Rows updated: {c.rowcount}")
-        conn.commit()
-        conn.close()
-        return True
+        conn, _ = get_connection()
+        try:
+            c = conn.cursor()
+            new_end = (datetime.now() + timedelta(days=days)).isoformat()
+            c.execute("UPDATE user_profiles SET trial_end = %s, plan = 'trial', updated_at = %s WHERE user_id = %s",
+                      (new_end, datetime.now().isoformat(), user_id))
+            conn.commit()
+            print(f"[DB] Trial extended {user_id} +{days} hari")
+            return True
+        finally:
+            conn.close()
     except Exception as e:
         print(f"[DB] Extend trial error: {e}")
         return False
 
-async def get_user_id_by_wa_session(phone: str) -> str:
+def get_user_id_by_wa_session(phone: str) -> str:
     """Lookup user_id berdasarkan WA session — untuk multi-user routing"""
     try:
         conn, _ = get_connection()
-        c = conn.cursor()
-        c.execute("SELECT user_id FROM wa_sessions WHERE phone = %s AND is_active = true LIMIT 1", (phone,))
-        row = c.fetchone()
-        conn.close()
-        return row[0] if row else None
+        try:
+            c = conn.cursor()
+            c.execute("SELECT user_id FROM wa_sessions WHERE phone = %s AND is_active = true LIMIT 1", (phone,))
+            row = c.fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
     except Exception as e:
         print(f"[DB] get_user_id_by_wa_session error: {e}")
         return None
@@ -757,23 +779,21 @@ def check_and_increment_usage(user_id: str, plan: str) -> dict:
     limit = limits.get(plan, 10)
     
     conn, _ = get_connection()
-    c = conn.cursor()
-    
-    today = datetime.now().strftime("%Y-%m-%d")
-    
-    c.execute("""
-        INSERT INTO daily_usage (user_id, date, command_count)
-        VALUES (%s, %s, 1)
-        ON CONFLICT (user_id, date)
-        DO UPDATE SET command_count = daily_usage.command_count + 1
-        RETURNING command_count
-    """, (user_id, today))
-    
-    result = c.fetchone()
-    count = result[0] if result else 1
-    conn.commit()
-    conn.close()
-    
+    try:
+        c = conn.cursor()
+        today = datetime.now().strftime("%Y-%m-%d")
+        c.execute("""
+            INSERT INTO daily_usage (user_id, date, command_count)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (user_id, date)
+            DO UPDATE SET command_count = daily_usage.command_count + 1
+            RETURNING command_count
+        """, (user_id, today))
+        result = c.fetchone()
+        count = result[0] if result else 1
+        conn.commit()
+    finally:
+        conn.close()
     return {
         "allowed": count <= limit,
         "count": count,
