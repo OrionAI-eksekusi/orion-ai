@@ -1,10 +1,8 @@
 import os
 import json
 import re
-from dotenv import load_dotenv
 from app.services.ai_provider import call_llm, parse_json_response
 
-load_dotenv()
 
 # ── Detect casual/umum ────────────────────────────────────
 def is_casual_message(message: str) -> bool:
@@ -894,7 +892,6 @@ async def generate_briefing(user_id: str = 'default'):
         from app.services.gmail_service import get_recent_emails
         all_emails = get_recent_emails(max_results=10, user_id=user_id)
         emails = [e for e in all_emails if
-            'azvickyfadzry02@gmail.com' not in e.get('from', '') and
             'noreply' not in e.get('from', '').lower() and
             'whatsapp' not in e.get('from', '').lower() and
             e.get('subject', '').strip() not in ['No Subject', '']
@@ -1131,174 +1128,6 @@ Respond HANYA dengan JSON array, tidak ada teks lain."""
         return {"status": "success", "extracted": extracted_count, "results": results}
     except Exception as e:
         print(f"[AUTO EXTRACT ERROR] {e}")
-        return {"status": "error", "message": str(e), "extracted": 0}
-
-
-async def auto_extract_transactions_from_wa(user_id: str = "default") -> dict:
-    """Auto extract transaksi dari pesan WA → Zenith Price Guard"""
-    try:
-        from app.services.database_service import get_wa_messages
-        messages = get_wa_messages(limit=20, user_id=user_id)
-
-        if not messages:
-            return {"status": "no_messages", "extracted": 0}
-
-        # Filter pesan yang kemungkinan berisi transaksi
-        keywords = ['harga', 'price', 'invoice', 'faktur', 'penawaran',
-                   'quotation', 'order', 'beli', 'jual', 'bayar', 'rp',
-                   'rupiah', 'ribu', 'juta', 'dp', 'down payment']
-
-        tx_messages = []
-        for msg in messages:
-            text = msg.get('message', '').lower()
-            if any(kw in text for kw in keywords):
-                tx_messages.append(msg)
-
-        if not tx_messages:
-            return {"status": "no_transactions", "extracted": 0}
-
-        system_prompt = """Ekstrak data transaksi dari pesan WhatsApp bisnis.
-HANYA ekstrak kalau ada harga spesifik dan nama item/jasa yang jelas.
-JANGAN ekstrak pesan umum tanpa angka harga.
-
-Jawab JSON array:
-[{"vendor_name":"nama pengirim/vendor","item_description":"item/jasa","unit_price":angka,"quantity":1,"total_amount":angka,"category":"general","source_wa":"nomor WA"}]
-
-Jika tidak ada: []
-Respond HANYA dengan JSON."""
-
-        wa_content = "\n---\n".join([
-            f"From: {m.get('phone','')}\nMessage: {m.get('message','')[:300]}"
-            for m in tx_messages[:10]
-        ])
-
-        response = await call_llm(system_prompt, wa_content)
-        import json, re
-        clean = response.replace('```json','').replace('```','').strip()
-        match = re.search(r'\[.*\]', clean, re.DOTALL)
-        if match:
-            clean = match.group()
-        try:
-            transactions = json.loads(clean)
-        except:
-            transactions = []
-
-        if not transactions:
-            return {"status": "no_transactions_found", "extracted": 0}
-
-        extracted_count = 0
-        results = []
-        for tx in transactions:
-            try:
-                if tx.get('vendor_name') and tx.get('unit_price', 0) > 0:
-                    from app.services.zenith_service import analyze_price_guard
-                    result = await analyze_price_guard(
-                        user_id=user_id,
-                        vendor_name=tx['vendor_name'],
-                        item_description=tx.get('item_description', 'Unknown'),
-                        unit_price=float(tx.get('unit_price', 0)),
-                        quantity=float(tx.get('quantity', 1)),
-                        category=tx.get('category', 'general'),
-                    )
-                    results.append({
-                        "vendor": tx['vendor_name'],
-                        "item": tx['item_description'],
-                        "risk_level": result.get('risk_level', 'UNKNOWN'),
-                        "risk_score": result.get('risk_score', 0),
-                        "source_wa": tx.get('source_wa', '')
-                    })
-                    extracted_count += 1
-            except Exception as e:
-                print(f"[WA EXTRACT] Error: {e}")
-
-        return {"status": "success", "extracted": extracted_count, "results": results}
-
-    except Exception as e:
-        print(f"[WA EXTRACT ERROR] {e}")
-        return {"status": "error", "message": str(e), "extracted": 0}
-
-
-async def auto_extract_transactions_from_wa(user_id: str = "default") -> dict:
-    """Auto extract transaksi dari pesan WA → Zenith Price Guard"""
-    try:
-        from app.services.database_service import get_wa_messages
-        messages = get_wa_messages(limit=20, user_id=user_id)
-
-        if not messages:
-            return {"status": "no_messages", "extracted": 0}
-
-        # Filter pesan yang kemungkinan berisi transaksi
-        keywords = ['harga', 'price', 'invoice', 'faktur', 'penawaran',
-                   'quotation', 'order', 'beli', 'jual', 'bayar', 'rp',
-                   'rupiah', 'ribu', 'juta', 'dp', 'down payment']
-
-        tx_messages = []
-        for msg in messages:
-            text = msg.get('message', '').lower()
-            if any(kw in text for kw in keywords):
-                tx_messages.append(msg)
-
-        if not tx_messages:
-            return {"status": "no_transactions", "extracted": 0}
-
-        system_prompt = """Ekstrak data transaksi dari pesan WhatsApp bisnis.
-HANYA ekstrak kalau ada harga spesifik dan nama item/jasa yang jelas.
-JANGAN ekstrak pesan umum tanpa angka harga.
-
-Jawab JSON array:
-[{"vendor_name":"nama pengirim/vendor","item_description":"item/jasa","unit_price":angka,"quantity":1,"total_amount":angka,"category":"general","source_wa":"nomor WA"}]
-
-Jika tidak ada: []
-Respond HANYA dengan JSON."""
-
-        wa_content = "\n---\n".join([
-            f"From: {m.get('phone','')}\nMessage: {m.get('message','')[:300]}"
-            for m in tx_messages[:10]
-        ])
-
-        response = await call_llm(system_prompt, wa_content)
-        import json, re
-        clean = response.replace('```json','').replace('```','').strip()
-        match = re.search(r'\[.*\]', clean, re.DOTALL)
-        if match:
-            clean = match.group()
-        try:
-            transactions = json.loads(clean)
-        except:
-            transactions = []
-
-        if not transactions:
-            return {"status": "no_transactions_found", "extracted": 0}
-
-        extracted_count = 0
-        results = []
-        for tx in transactions:
-            try:
-                if tx.get('vendor_name') and tx.get('unit_price', 0) > 0:
-                    from app.services.zenith_service import analyze_price_guard
-                    result = await analyze_price_guard(
-                        user_id=user_id,
-                        vendor_name=tx['vendor_name'],
-                        item_description=tx.get('item_description', 'Unknown'),
-                        unit_price=float(tx.get('unit_price', 0)),
-                        quantity=float(tx.get('quantity', 1)),
-                        category=tx.get('category', 'general'),
-                    )
-                    results.append({
-                        "vendor": tx['vendor_name'],
-                        "item": tx['item_description'],
-                        "risk_level": result.get('risk_level', 'UNKNOWN'),
-                        "risk_score": result.get('risk_score', 0),
-                        "source_wa": tx.get('source_wa', '')
-                    })
-                    extracted_count += 1
-            except Exception as e:
-                print(f"[WA EXTRACT] Error: {e}")
-
-        return {"status": "success", "extracted": extracted_count, "results": results}
-
-    except Exception as e:
-        print(f"[WA EXTRACT ERROR] {e}")
         return {"status": "error", "message": str(e), "extracted": 0}
 
 
