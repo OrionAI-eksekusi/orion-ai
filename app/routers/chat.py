@@ -22,7 +22,6 @@ from app.services.memory_service import (
 import httpx
 import json
 import os
-import sqlite3
 import base64
 import tempfile
 import datetime
@@ -33,7 +32,6 @@ init_memory_db()
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 WA_GATEWAY_URL = os.getenv("WA_GATEWAY_URL", "http://localhost:3000")
-DB_PATH = os.getenv("DB_PATH", "orion.db")
 
 
 # ── Models ─────────────────────────────────────────────────
@@ -903,16 +901,17 @@ async def whatsapp_webhook(request: Request):
             print(f"[WA SEND ERROR] {send_err}")
 
         try:
-            update_customer_memory(phone, message, reply_text)
+            update_customer_memory(phone, message, reply_text, user_id)
         except Exception as mem_err:
             print(f"[MEMORY ERROR] {mem_err}")
 
         try:
             sender = phone.replace("@lid", "").replace("@s.whatsapp.net", "")
-            await send_fcm_to_all_users(
+            await send_fcm_notification(
                 title=f"💬 WA dari {sender}",
                 body=message[:100],
-                data={"type": "wa", "phone": phone}
+                data={"type": "wa", "phone": phone},
+                user_id=user_id
             )
         except Exception as fcm_err:
             print(f"[FCM WA ERROR] {fcm_err}")
@@ -944,10 +943,10 @@ async def debug_db():
     try:
         conn, _db_type = get_connection()
         c = conn.cursor()
-        c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        c.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
         tables = [row[0] for row in c.fetchall()]
         conn.close()
-        return {"db_path": DB_PATH, "tables": tables, "exists": os.path.exists(DB_PATH)}
+        return {"tables": tables, "db": "postgresql"}
     except Exception as e:
         return {"error": str(e), "db_path": DB_PATH}
 
@@ -996,10 +995,12 @@ async def payment_webhook(request: Request):
                 plan = parts[2]
                 from app.services.database_service import get_connection
                 conn, _ = get_connection()
-                c = conn.cursor()
-                c.execute("UPDATE users SET plan = %s, updated_at = NOW() WHERE user_id = %s", (plan, user_id))
-                conn.commit()
-                conn.close()
+                try:
+                    c = conn.cursor()
+                    c.execute("UPDATE users SET plan = %s, updated_at = NOW() WHERE user_id = %s", (plan, user_id))
+                    conn.commit()
+                finally:
+                    conn.close()
                 print(f"[PAYMENT] ✅ User {user_id} upgraded to {plan}")
         return {"status": "ok"}
     except Exception as e:
@@ -1031,17 +1032,19 @@ async def update_profile(request: Request):
         
         from app.services.database_service import get_connection
         conn, _ = get_connection()
-        c = conn.cursor()
-        c.execute("""
-            UPDATE users SET 
-                phone = %s,
-                business_name = %s,
-                business_context = %s,
-                updated_at = NOW()
-            WHERE user_id = %s
-        """, (phone, business_name, business_context, user_id))
-        conn.commit()
-        conn.close()
+        try:
+            c = conn.cursor()
+            c.execute("""
+                UPDATE users SET
+                    phone = %s,
+                    business_name = %s,
+                    business_context = %s,
+                    updated_at = NOW()
+                WHERE user_id = %s
+            """, (phone, business_name, business_context, user_id))
+            conn.commit()
+        finally:
+            conn.close()
         
         print(f"[PROFILE] Updated for {user_id}")
         return {"status": "success", "message": "Profile updated!"}
@@ -1059,15 +1062,17 @@ async def save_sop(request: Request):
         
         from app.services.database_service import get_connection
         conn, _ = get_connection()
-        c = conn.cursor()
-        c.execute("""
-            INSERT INTO workspace_sop (user_id, sop_type, content, updated_at)
-            VALUES (%s, %s, %s, NOW())
-            ON CONFLICT (user_id, sop_type)
-            DO UPDATE SET content = %s, updated_at = NOW()
-        """, (user_id, sop_type, content, content))
-        conn.commit()
-        conn.close()
+        try:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO workspace_sop (user_id, sop_type, content, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (user_id, sop_type)
+                DO UPDATE SET content = %s, updated_at = NOW()
+            """, (user_id, sop_type, content, content))
+            conn.commit()
+        finally:
+            conn.close()
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1077,10 +1082,12 @@ async def get_sop(user_id: str):
     try:
         from app.services.database_service import get_connection
         conn, _ = get_connection()
-        c = conn.cursor()
-        c.execute("SELECT sop_type, content FROM workspace_sop WHERE user_id = %s", (user_id,))
-        rows = c.fetchall()
-        conn.close()
+        try:
+            c = conn.cursor()
+            c.execute("SELECT sop_type, content FROM workspace_sop WHERE user_id = %s", (user_id,))
+            rows = c.fetchall()
+        finally:
+            conn.close()
         return {"status": "success", "sop": [{"type": r[0], "content": r[1]} for r in rows]}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -1124,8 +1131,9 @@ async def send_notification(request: Request):
 @router.get("/calendar/{user_id}")
 async def get_calendar(user_id: str):
     try:
+        import asyncio
         from app.services.calendar_service import get_upcoming_events
-        result = get_upcoming_events(user_id)
+        result = await asyncio.to_thread(get_upcoming_events, user_id)
         if result.get("reauth_required"):
             return {"status": "reauth_required", "message": "Silakan login ulang untuk mengaktifkan Google Calendar"}
         return {"status": "success", "events": result.get("events", [])}
