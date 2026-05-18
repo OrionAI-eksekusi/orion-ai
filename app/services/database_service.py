@@ -741,16 +741,24 @@ def get_user_gmail_token(user_id: str) -> dict:
 
 
 def extend_trial(user_id: str, days: int = 30):
-    """Extend trial user"""
+    """Extend trial user — update user_profiles"""
     try:
         conn, _ = get_connection()
         try:
             c = conn.cursor()
-            new_end = (datetime.now() + timedelta(days=days)).isoformat()
-            c.execute("UPDATE user_profiles SET trial_end = %s, plan = 'trial', updated_at = %s WHERE user_id = %s",
-                      (new_end, datetime.now().isoformat(), user_id))
+            now = datetime.now()
+            new_end = (now + timedelta(days=days)).isoformat()
+            c.execute("""
+                INSERT INTO user_profiles (user_id, plan, trial_start, trial_end, updated_at)
+                VALUES (%s, 'trial', %s, %s, NOW())
+                ON CONFLICT(user_id) DO UPDATE SET
+                    plan = 'trial',
+                    trial_start = %s,
+                    trial_end = %s,
+                    updated_at = NOW()
+            """, (user_id, now.isoformat(), new_end, now.isoformat(), new_end))
             conn.commit()
-            print(f"[DB] Trial extended {user_id} +{days} hari")
+            print(f"[DB] Trial extended {user_id} +{days} hari sampai {new_end[:10]}")
             return True
         finally:
             conn.close()
