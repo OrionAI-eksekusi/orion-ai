@@ -5,7 +5,7 @@ from app.services.agent_runtime import run_sales_agent
 from app.services.gmail_service import get_recent_emails, send_email
 from app.services.whatsapp_service import send_whatsapp, receive_whatsapp_message, broadcast_whatsapp
 from app.services.database_service import (
-    get_connection, DB_PATH,
+    get_connection,
     init_db, get_wa_messages, mark_replied,
     save_user_profile, get_user_profile, get_all_active_users,
     save_fcm_token_db, get_fcm_token_db, update_user_fcm_token,
