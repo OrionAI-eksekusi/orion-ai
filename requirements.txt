@@ -21,3 +21,4 @@ asyncpg
 anthropic
 arq
 reportlab
+arq

@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import chat, auth
 from app.routers import zenith
-from app.services.scheduler_service import start_scheduler, stop_scheduler
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -21,9 +20,7 @@ async def lifespan(app: FastAPI):
         print("[STARTUP] ✅ Database initialized!")
     except Exception as e:
         print(f"[STARTUP] ❌ DB init error: {e}")
-    start_scheduler()
     yield
-    stop_scheduler()
 
 app = FastAPI(
     title="Orion AI",

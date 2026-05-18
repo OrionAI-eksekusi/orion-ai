@@ -342,7 +342,8 @@ async def daily_intelligence_briefing():
 
         events_today = []
         try:
-            events = get_upcoming_events(max_results=5)
+            cal_result = get_upcoming_events(user_id, max_results=5)
+            events = cal_result.get('events', [])
             today = datetime.now().strftime("%Y-%m-%d")
             for e in events:
                 start = e.get("start", "")
