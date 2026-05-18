@@ -245,20 +245,23 @@ async def payment_reminder_check():
 
 
 async def daily_intelligence_briefing():
-    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB"""
+    """Kirim Daily Intelligence Briefing setiap pagi jam 06.00 WIB — per user"""
     try:
         logger.info("[BRIEFING] Memulai Daily Intelligence Briefing...")
 
-        from app.services.gmail_service import get_gmail_service
         from app.services.database_service import get_wa_messages, get_all_active_users
         from app.services.calendar_service import get_upcoming_events
+        from app.services.gmail_service import get_gmail_service_for_user
         from app.routers.chat import send_fcm_notification
         from app.services.ai_provider import call_llm
+        import asyncio
         import httpx
         from datetime import datetime
         import os
 
         user_city = os.getenv("USER_CITY", "Jakarta")
+
+        # Global: sama untuk semua user
         weather_text = "Tidak tersedia"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -268,51 +271,6 @@ async def daily_intelligence_briefing():
                 )
                 if res.status_code == 200:
                     weather_text = res.text.strip()
-        except Exception:
-            pass
-
-        email_count = 0
-        urgent_emails = []
-        try:
-            service = get_gmail_service()
-            results = service.users().messages().list(
-                userId='me',
-                maxResults=10,
-                labelIds=['INBOX', 'UNREAD'],
-                q='is:unread newer_than:1d'
-            ).execute()
-            messages = results.get('messages', [])
-            email_count = len(messages)
-
-            for msg in messages[:3]:
-                detail = service.users().messages().get(
-                    userId='me', id=msg['id'], format='metadata',
-                    metadataHeaders=['From', 'Subject']
-                ).execute()
-                headers = detail['payload']['headers']
-                sender = next((h['value']
-                              for h in headers if h['name'] == 'From'), '')
-                subject = next(
-                    (h['value'] for h in headers if h['name'] == 'Subject'), '')
-                sender_clean = sender.split('<')[0].strip().replace('"', '')
-                urgent_emails.append(f"• {sender_clean}: {subject[:50]}")
-        except Exception as e:
-            logger.error(f"[BRIEFING EMAIL] {e}")
-
-        wa_messages = get_wa_messages(limit=20)
-        wa_unreplied = [m for m in wa_messages if not m.get("replied")]
-        wa_count = len(wa_unreplied)
-
-        events_today = []
-        try:
-            cal_result = get_upcoming_events(user_id, max_results=5)
-            events = cal_result.get('events', [])
-            today = datetime.now().strftime("%Y-%m-%d")
-            for e in events:
-                start = e.get("start", "")
-                if today in str(start):
-                    events_today.append(
-                        f"• {e.get('title', '')} — {start[11:16]}")
         except Exception:
             pass
 
@@ -335,9 +293,9 @@ async def daily_intelligence_briefing():
             business_news = "• Pantau pergerakan kurs Rupiah hari ini\n• Cek update kebijakan ekspor terbaru"
 
         now = datetime.now()
-        day_id = ["Senin", "Selasa", "Rabu", "Kamis",
-                  "Jumat", "Sabtu", "Minggu"][now.weekday()]
+        day_id = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"][now.weekday()]
         date_str = now.strftime(f"{day_id}, %d %B %Y")
+        today = now.strftime("%Y-%m-%d")
 
         users = get_all_active_users()
         if not users:
@@ -345,29 +303,74 @@ async def daily_intelligence_briefing():
                       "city": user_city, "phone": os.getenv("USER_PHONE", "")}]
 
         for user in users:
-            user_id = user["user_id"]
-            user_name = user.get("name") or os.getenv("USER_NAME", "Bos")
+            user_id    = user["user_id"]
+            user_name  = user.get("name") or os.getenv("USER_NAME", "Bos")
             user_phone = user.get("phone") or os.getenv("USER_PHONE", "")
-            city = user.get("city") or user_city
+            city       = user.get("city") or user_city
 
+            # Per-user: email
+            email_count   = 0
+            urgent_emails = []
+            try:
+                service = await asyncio.to_thread(get_gmail_service_for_user, user_id)
+                results = service.users().messages().list(
+                    userId="me", maxResults=10,
+                    labelIds=["INBOX", "UNREAD"], q="is:unread newer_than:1d"
+                ).execute()
+                messages    = results.get("messages", [])
+                email_count = len(messages)
+                for msg in messages[:3]:
+                    detail  = service.users().messages().get(
+                        userId="me", id=msg["id"], format="metadata",
+                        metadataHeaders=["From", "Subject"]
+                    ).execute()
+                    headers = detail["payload"]["headers"]
+                    sender  = next((h["value"] for h in headers if h["name"] == "From"), "")
+                    subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+                    sender_clean = sender.split("<")[0].strip().replace('"', "")
+                    urgent_emails.append(f"• {sender_clean}: {subject[:50]}")
+            except Exception as e:
+                logger.error(f"[BRIEFING EMAIL] user {user_id}: {e}")
+
+            # Per-user: WA
+            wa_count = 0
+            try:
+                wa_msgs  = get_wa_messages(limit=20, user_id=user_id)
+                wa_count = len([m for m in wa_msgs if not m.get("replied")])
+            except Exception:
+                pass
+
+            # Per-user: Calendar
+            events_today = []
+            try:
+                cal_result = await asyncio.to_thread(get_upcoming_events, user_id, 5)
+                for e in cal_result.get("events", []):
+                    start_info = e.get("start", {})
+                    start_dt   = start_info.get("dateTime") or start_info.get("date", "")
+                    if today in str(start_dt):
+                        events_today.append(f"• {e.get('summary', '')} — {str(start_dt)[11:16]}")
+            except Exception:
+                pass
+
+            # Per-user: Brain Follow Up
             brain_reminder = ""
             try:
                 from app.services.memory_service import get_pending_follow_ups
                 pending = get_pending_follow_ups(user_id)
                 if pending:
                     names = [p["name"] for p in pending[:3]]
-                    brain_reminder = f"\n\n⏰ FOLLOW UP HARI INI:\n" + \
-                        "\n".join([f"• {n}" for n in names])
+                    brain_reminder = "\n\n⏰ FOLLOW UP HARI INI:\n" + "\n".join([f"• {n}" for n in names])
             except Exception:
                 pass
 
+            # Per-user: Invoice
             invoice_reminder = ""
             try:
                 from app.services.payment_service import get_due_invoices, format_amount, init_payment_db
                 init_payment_db()
                 due_invoices = get_due_invoices(user_id)
                 if due_invoices:
-                    invoice_reminder = f"\n\n💰 TAGIHAN JATUH TEMPO:\n"
+                    invoice_reminder = "\n\n💰 TAGIHAN JATUH TEMPO:\n"
                     for inv in due_invoices[:3]:
                         invoice_reminder += f"• {inv['customer_name']} — {format_amount(inv['amount'])}\n"
             except Exception:
@@ -410,13 +413,12 @@ Semangat hari ini! 💪🔥
                 from app.services.whatsapp_service import send_whatsapp_baileys
                 if user_phone:
                     send_whatsapp_baileys(user_phone, briefing_text)
+                    logger.info(f"[BRIEFING] ✅ Terkirim ke {user_name} ({user_phone})")
             except Exception as e:
                 logger.error(f"[BRIEFING WA] {e}")
-                logger.info(f"[BRIEFING] WA terkirim ke {user_phone}")
 
     except Exception as e:
         logger.error(f"[BRIEFING ERROR] {e}")
-        logger.info("[BRIEFING] Daily Intelligence Briefing selesai!")
 
 
 async def generate_weekly_report():

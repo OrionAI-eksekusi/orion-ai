@@ -443,9 +443,9 @@ async def chat(request: CommandRequest):
 
 
 @router.get("/emails")
-async def read_emails():
+async def read_emails(user_id: str = "default"):
     try:
-        emails = get_recent_emails()
+        emails = get_recent_emails(user_id=user_id)
         return {"status": "success", "emails": emails}
     except Exception as e:
         print(f"[EMAILS ERROR] {e}")
@@ -455,7 +455,7 @@ async def read_emails():
 @router.post("/send-email")
 async def send_email_endpoint(request: SendEmailRequest):
     try:
-        result = send_email(request.to, request.subject, request.body)
+        result = send_email(request.to, request.subject, request.body, user_id=request.user_id)
         return result
     except Exception as e:
         return {"status": "error", "message": str(e)}
