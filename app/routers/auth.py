@@ -88,10 +88,10 @@ async def google_callback(code: str, state: str = "default"):
             plan = 'trial'
             trial_days_left = 3
             try:
-                from app.services.database_service import get_connection
-                conn, db_type = get_connection()
-                c = conn.cursor()
-                if db_type == "postgresql":
+                from app.services.database_service import get_connection, save_user_profile, init_user_plan
+                conn, _ = get_connection()
+                try:
+                    c = conn.cursor()
                     c.execute('''
                         INSERT INTO users (user_id, name, email, plan, created_at, updated_at)
                         VALUES (%s, %s, %s, %s, NOW(), NOW())
@@ -107,8 +107,16 @@ async def google_callback(code: str, state: str = "default"):
                         if trial_end:
                             diff = trial_end - datetime.now()
                             trial_days_left = max(0, diff.days)
-                conn.commit()
-                conn.close()
+                    conn.commit()
+                finally:
+                    conn.close()
+                # Sync ke user_profiles dan init trial
+                save_user_profile(user_id, name, email, "")
+                init_user_plan(user_id)
+                from app.services.database_service import get_user_plan
+                plan_info = get_user_plan(user_id)
+                plan = plan_info.get("plan", "trial")
+                trial_days_left = plan_info.get("trial_days_left", 3)
             except Exception as e:
                 print(f"Error saving user: {e}")
 
