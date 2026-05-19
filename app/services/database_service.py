@@ -726,14 +726,14 @@ def get_user_gmail_token(user_id: str) -> dict:
         try:
             c = conn.cursor()
             c.execute('''
-                SELECT access_token, id_token, updated_at
+                SELECT access_token, refresh_token, scopes, updated_at
                 FROM user_gmail_tokens WHERE user_id = %s
             ''', (user_id,))
             row = c.fetchone()
         finally:
             conn.close()
         if row:
-            return {"access_token": row[0], "id_token": row[1], "updated_at": row[2]}
+            return {"access_token": row[0], "refresh_token": row[1], "scopes": row[2], "updated_at": row[3]}
         return {}
     except Exception as e:
         print(f"[DB] Get gmail token error: {e}")
