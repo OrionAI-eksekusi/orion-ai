@@ -115,17 +115,21 @@ def _get_user_creds(user_id: str) -> Credentials:
     """Ambil credentials per user dari DB — multi-tenant"""
     try:
         user_token = get_user_gmail_token(user_id)
-        if user_token and user_token.get('access_token'):
+        if user_token and user_token.get('access_token') and user_token.get('refresh_token'):
             creds = Credentials(
                 token=user_token['access_token'],
-                refresh_token=user_token.get('refresh_token', ''),
+                refresh_token=user_token['refresh_token'],
                 token_uri='https://oauth2.googleapis.com/token',
                 client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
                 client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
                 scopes=SCOPES
             )
-            if creds.expired and creds.refresh_token:
+            # Force refresh untuk pastikan token valid
+            try:
                 creds.refresh(Request())
+                print(f"[GMAIL] ✅ Token refreshed untuk {user_id}")
+            except Exception as re:
+                print(f"[GMAIL] Refresh failed: {re}")
             return creds
     except Exception as e:
         print(f"[GMAIL] Error get user creds: {e}")
