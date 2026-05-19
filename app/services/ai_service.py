@@ -1018,9 +1018,15 @@ Jawab HANYA dengan JSON murni tanpa backtick:
 Jika tidak ada task, kembalikan tasks sebagai array kosong."""
 
     try:
+        # Convert datetime objects ke string
+        def json_safe(obj):
+            if hasattr(obj, 'isoformat'):
+                return obj.isoformat()
+            return str(obj)
+
         ai_response = await call_llm(
             system_prompt,
-            f"Email:\n{json.dumps(emails, indent=2)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2)}"
+            f"Email:\n{json.dumps(emails, indent=2, default=json_safe)}\n\nWhatsApp:\n{json.dumps(wa_messages, indent=2, default=json_safe)}"
         )
         parsed = parse_json_response(ai_response) or {"tasks": [], "summary": "Tidak ada task"}
     except Exception as e:

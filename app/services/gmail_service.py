@@ -8,6 +8,7 @@ from email import encoders
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from app.services.database_service import get_connection, get_user_gmail_token
 
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
