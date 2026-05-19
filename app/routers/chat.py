@@ -219,6 +219,60 @@ async def _run_broadcast(phones: list, message: str, user_id: str = "default"):
 
 
 # ── Health Check ───────────────────────────────────────────
+@router.post("/generate-email-reply")
+async def generate_email_reply(request: Request):
+    """Generate draft balasan email pakai AI — dedicated endpoint, cepat"""
+    try:
+        data = await request.json()
+        user_id  = data.get("user_id", "")
+        from_    = data.get("from", "")
+        subject  = data.get("subject", "")
+        body     = data.get("body", "")
+
+        from app.services.ai_provider import call_llm
+
+        # Ambil SOP bisnis user untuk konteks
+        sop_context = ""
+        try:
+            from app.services.database_service import get_connection
+            conn, _ = get_connection()
+            try:
+                c = conn.cursor()
+                c.execute("SELECT content FROM workspace_sop WHERE user_id = %s LIMIT 3", (user_id,))
+                rows = c.fetchall()
+                sop_context = "\n".join([r[0] for r in rows])
+            finally:
+                conn.close()
+        except:
+            pass
+
+        system_prompt = f"""Kamu adalah asisten email profesional untuk bisnis Indonesia.
+Tugasmu: tulis draft balasan email yang profesional, natural, dan to-the-point.
+
+Konteks bisnis:
+{sop_context or "Bisnis umum Indonesia"}
+
+ATURAN:
+- Tulis HANYA isi email balasannya saja — langsung mulai dari salam pembuka
+- Bahasa Indonesia profesional tapi natural
+- Maksimal 150 kata
+- Sesuai konteks email yang diterima
+- Jangan tulis "Subject:" atau metadata apapun"""
+
+        user_prompt = f"""Email yang perlu dibalas:
+Dari: {from_}
+Subjek: {subject}
+Isi: {body[:1500]}
+
+Tulis draft balasannya:"""
+
+        reply = await call_llm(system_prompt, user_prompt)
+        return {"status": "success", "reply": reply}
+
+    except Exception as e:
+        return {"status": "error", "reply": "", "message": str(e)}
+
+
 @router.get("/health")
 async def health_check():
     """✅ Cek kesehatan semua service Orion AI"""
