@@ -978,9 +978,10 @@ Jawab HANYA dengan JSON murni tanpa backtick:
 
 
 async def extract_tasks(user_id: str = 'default'):
+    import asyncio
     try:
         from app.services.gmail_service import get_recent_emails
-        all_emails = get_recent_emails(max_results=10, user_id=user_id)
+        all_emails = await asyncio.to_thread(get_recent_emails, 10, user_id)
         emails = [e for e in all_emails if
             'noreply' not in e.get('from', '').lower() and
             e.get('subject', '').strip() not in ['No Subject', '']
@@ -988,14 +989,12 @@ async def extract_tasks(user_id: str = 'default'):
     except Exception as e:
         print(f"[TASKS EMAIL ERROR] {e}")
         emails = []
-
     try:
         from app.services.database_service import get_wa_messages
-        wa_messages = get_wa_messages(limit=10, user_id=user_id)
+        wa_messages = await asyncio.to_thread(get_wa_messages, 10, user_id)
     except Exception as e:
         print(f"[TASKS WA ERROR] {e}")
         wa_messages = []
-
     system_prompt = """Kamu adalah Orion AI. Analisa email dan pesan WhatsApp berikut.
 Deteksi semua task, meeting, deadline, permintaan file, dan follow up.
 
