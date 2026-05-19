@@ -622,9 +622,9 @@ async def update_memory(request: UpdateMemoryRequest):
 
 
 @router.get("/customers")
-async def get_customers():
+async def get_customers(user_id: str = "default"):
     try:
-        customers = get_all_customers()
+        customers = get_all_customers(user_id=user_id)
         return {"status": "success", "customers": customers}
     except Exception as e:
         return {"status": "error", "customers": [], "message": str(e)}
@@ -694,7 +694,7 @@ async def broadcast(request: BroadcastRequest, background_tasks: BackgroundTasks
                     "message": "⚠️ Broadcast hanya tersedia untuk plan Apex dan Zenith."
                 }
 
-        customers = get_all_customers()
+        customers = get_all_customers(user_id=user_id)
         if not customers:
             return {"status": "error", "message": "Tidak ada customer ditemukan"}
         phones = [c["phone"] for c in customers if c.get("phone")]
