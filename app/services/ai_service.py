@@ -191,6 +191,57 @@ async def process_command(message: str, user_id: str = "default"):
     is_payment = is_payment_command(message)
     casual = is_casual_message(message)
 
+    # ── Handle Laporan Harian / Briefing ──────────────────
+    briefing_keywords = ['laporan harian', 'laporan hari ini', 'briefing', 'rangkuman hari ini',
+                         'summary hari ini', 'rekap hari ini', 'rekapan', 'laporan aktivitas']
+    is_briefing = any(kw in message.lower() for kw in briefing_keywords)
+
+    if is_briefing:
+        try:
+            briefing = await generate_briefing(user_id)
+            urgent = briefing.get("urgent", [])
+            bisa_nanti = briefing.get("bisa_nanti", [])
+            arsip = briefing.get("arsip", [])
+            summary = briefing.get("summary", "")
+
+            reply = f"📊 *Laporan Harian Orion AI*\n\n"
+            reply += f"📋 {summary}\n\n"
+
+            if urgent:
+                reply += f"🔴 *URGENT ({len(urgent)} email):*\n"
+                for e in urgent[:3]:
+                    reply += f"• {e.get('from','')}: {e.get('subject','')}\n"
+                    if e.get('action'):
+                        reply += f"  → {e.get('action','')}\n"
+                reply += "\n"
+
+            if bisa_nanti:
+                reply += f"🟡 *BISA NANTI ({len(bisa_nanti)} email):*\n"
+                for e in bisa_nanti[:3]:
+                    reply += f"• {e.get('from','')}: {e.get('subject','')}\n"
+                reply += "\n"
+
+            reply += f"📦 Arsip: {len(arsip)} email tidak penting"
+
+            return {
+                "status": "success",
+                "message": message,
+                "response": reply,
+                "emails": urgent + bisa_nanti,
+                "parsed": {
+                    "intent": "briefing",
+                    "summary": summary,
+                    "action": "daily_report",
+                    "needs_confirmation": False,
+                    "draft": "",
+                    "reply": reply,
+                    "reply_to": "",
+                    "subject": ""
+                }
+            }
+        except Exception as e:
+            print(f"[BRIEFING ERROR] {e}")
+
     # ── Handle Payment / Invoice ──────────────────────────
     if is_payment and not is_email_command:
         try:
